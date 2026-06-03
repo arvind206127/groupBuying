@@ -7,8 +7,8 @@ const generateOTP = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
-const generateToken = (userId) => {
-  return jwt.sign({ userId }, process.env.JWT_SECRET, {
+const generateToken = (userId, portal) => {
+  return jwt.sign({ userId, portal }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRES_IN || '7d',
   });
 };
@@ -16,14 +16,25 @@ const generateToken = (userId) => {
 // POST /api/auth/send-otp
 const sendOTP = async (req, res, next) => {
   try {
-    const { email, name } = req.body;
+    const { email, name, portal = 'user' } = req.body;
 
-    // Upsert user
-    const user = await db.user.upsert({
-      where: { email },
-      update: {},
-      create: { email, name: name || null },
-    });
+    let user;
+    if (portal === 'admin') {
+      user = await db.admin.findUnique({ where: { email } });
+      if (!user) return res.status(401).json({ success: false, message: 'Admin account not found.' });
+    } else if (portal === 'developer') {
+      user = await db.developer.upsert({
+        where: { email },
+        update: {},
+        create: { email, name: name || 'Developer' },
+      });
+    } else {
+      user = await db.user.upsert({
+        where: { email },
+        update: {},
+        create: { email, name: name || null },
+      });
+    }
 
     // Invalidate old OTPs
     await db.oTP.updateMany({
@@ -55,14 +66,14 @@ const sendOTP = async (req, res, next) => {
 // POST /api/auth/verify-otp
 const verifyOTP = async (req, res, next) => {
   try {
-    const { email, otp } = req.body;
+    const { email, otp, portal = 'user' } = req.body;
 
     // Development Master OTP for Admin
     if (process.env.NODE_ENV === 'development' && email === 'admin@realtogather.com' && otp === '123456') {
-       const user = await db.user.findUnique({ where: { email } });
+       const user = await db.admin.findUnique({ where: { email } });
        if (user) {
-         const token = generateToken(user.id);
-         return res.json({ success: true, message: 'Master Login successful!', token, user });
+         const token = generateToken(user.id, 'admin');
+         return res.json({ success: true, message: 'Master Login successful!', token, user: { ...user, portal: 'admin' } });
        }
     }
 
@@ -87,19 +98,34 @@ const verifyOTP = async (req, res, next) => {
     });
 
     // Update user as verified
-    const user = await db.user.update({
-      where: { email },
-      data: { isVerified: true },
-      select: { id: true, email: true, name: true, role: true, phone: true, city: true, avatar: true, isVerified: true },
-    });
+    let user;
+    if (portal === 'admin') {
+      user = await db.admin.update({
+        where: { email },
+        data: { isActive: true },
+        select: { id: true, email: true, name: true, role: true, phone: true, permissions: true },
+      });
+    } else if (portal === 'developer') {
+      user = await db.developer.update({
+        where: { email },
+        data: { isActive: true },
+        select: { id: true, email: true, name: true, phone: true },
+      });
+    } else {
+      user = await db.user.update({
+        where: { email },
+        data: { isVerified: true },
+        select: { id: true, email: true, name: true, role: true, phone: true, city: true, avatar: true, isVerified: true },
+      });
+    }
 
-    const token = generateToken(user.id);
+    const token = generateToken(user.id, portal);
 
     res.json({
       success: true,
       message: 'Login successful!',
       token,
-      user,
+      user: { ...user, portal },
     });
   } catch (error) {
     next(error);
@@ -109,17 +135,32 @@ const verifyOTP = async (req, res, next) => {
 // GET /api/auth/me
 const getMe = async (req, res, next) => {
   try {
-    const user = await db.user.findUnique({
-      where: { id: req.user.id },
-      select: {
-        id: true, email: true, name: true, role: true,
-        phone: true, city: true, avatar: true, isVerified: true,
-        budget: true, createdAt: true,
-        _count: { select: { groupMembers: true, subscriptions: true } },
-      },
-    });
+    const portal = req.user.portal || 'user';
+    let user;
 
-    res.json({ success: true, user });
+    if (portal === 'admin') {
+      user = await db.admin.findUnique({
+        where: { id: req.user.id },
+        select: { id: true, email: true, name: true, role: true, phone: true, permissions: true, createdAt: true },
+      });
+    } else if (portal === 'developer') {
+      user = await db.developer.findUnique({
+        where: { id: req.user.id },
+        select: { id: true, email: true, name: true, phone: true, createdAt: true },
+      });
+    } else {
+      user = await db.user.findUnique({
+        where: { id: req.user.id },
+        select: {
+          id: true, email: true, name: true, role: true,
+          phone: true, city: true, avatar: true, isVerified: true,
+          budget: true, createdAt: true,
+          _count: { select: { groupMembers: true, subscriptions: true } },
+        },
+      });
+    }
+
+    res.json({ success: true, user: { ...user, portal } });
   } catch (error) {
     next(error);
   }

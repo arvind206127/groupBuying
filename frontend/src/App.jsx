@@ -14,7 +14,6 @@ import FAQSection from './components/FAQSection';
 
 // Lazy load pages
 const Home = lazy(() => import('./pages/Home'));
-const Login = lazy(() => import('./pages/Login'));
 const Properties = lazy(() => import('./pages/Properties'));
 const PropertyDetails = lazy(() => import('./pages/PropertyDetails'));
 const GroupDetails = lazy(() => import('./pages/GroupDetails'));
@@ -54,14 +53,14 @@ const ProtectedRoute = ({ children, roles }) => {
   const { user, loading } = useAuth();
 
   if (loading) return <LoadingScreen />;
-  if (!user) return <Navigate to="/login" replace />;
+  if (!user) return <Navigate to="/" replace />;
   if (roles && !roles.includes(user.role)) return <Navigate to="/dashboard" replace />;
 
   return children;
 };
 
 const getDashboardPath = (user) => {
-  if (user?.role === 'ADMIN') return '/admin';
+  if (user?.role === 'ADMIN' || user?.role === 'SUPERADMIN') return '/admin';
   if (user?.role === 'RM') return '/rm';
   return '/user/dashboard';
 };
@@ -76,12 +75,10 @@ const AppContent = () => {
   const { user, loading } = useAuth();
   const isPanel = location.pathname.startsWith('/admin') ||
     location.pathname.startsWith('/rm') ||
-    location.pathname.startsWith('/user') ||
-    location.pathname === '/login';
+    location.pathname.startsWith('/user');
   const isListingPage = location.pathname === '/properties';
-  const isAdminOutsideDashboard = user?.role === 'ADMIN' &&
-    !location.pathname.startsWith('/admin') &&
-    location.pathname !== '/login';
+  const isAdminOutsideDashboard = (user?.role === 'ADMIN' || user?.role === 'SUPERADMIN') &&
+    !location.pathname.startsWith('/admin');
 
   if (!loading && isAdminOutsideDashboard) {
     return <Navigate to="/admin" replace />;
@@ -94,7 +91,6 @@ const AppContent = () => {
         <Suspense fallback={<LoadingScreen />}>
           <Routes>
             <Route path="/" element={<Home />} />
-            <Route path="/login" element={<Login />} />
             <Route path="/properties" element={<Properties />} />
             <Route path="/properties/:id" element={<PropertyDetails />} />
             <Route path="/groups/:id" element={<GroupDetails />} />
@@ -148,7 +144,7 @@ const AppContent = () => {
 
             {/* Admin Routes */}
             <Route path="/admin/*" element={
-              <ProtectedRoute roles={['ADMIN']}>
+              <ProtectedRoute roles={['ADMIN', 'SUPERADMIN']}>
                 <AdminDashboard />
               </ProtectedRoute>
             } />
