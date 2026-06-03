@@ -2,10 +2,10 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import {
   Home as HomeIcon, Mail, Phone, MapPin,
-  Facebook, Instagram, Linkedin,
   ArrowRight, Shield
 } from 'lucide-react';
 import api from '../api/axios';
+import { FacebookIcon, InstagramIcon, LinkedinIcon } from './SocialIcons';
 
 const Footer = () => {
   const currentYear = new Date().getFullYear();
@@ -42,9 +42,9 @@ const Footer = () => {
             </p>
             <div className="flex gap-3">
               {[
-                { Icon: Facebook, url: window.__SITE_SETTINGS__?.facebookUrl },
-                { Icon: Instagram, url: window.__SITE_SETTINGS__?.instagramUrl },
-                { Icon: Linkedin, url: window.__SITE_SETTINGS__?.linkedinUrl }
+                { Icon: FacebookIcon, url: window.__SITE_SETTINGS__?.facebookUrl },
+                { Icon: InstagramIcon, url: window.__SITE_SETTINGS__?.instagramUrl },
+                { Icon: LinkedinIcon, url: window.__SITE_SETTINGS__?.linkedinUrl }
               ].map(({ Icon, url }, idx) => (
                 <a key={idx} href={url || "#"} target="_blank" rel="noopener noreferrer" className="text-slate-500 hover:text-white transition-colors">
                   <Icon size={16} />

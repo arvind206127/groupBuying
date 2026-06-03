@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
-import { ArrowUpRight, Facebook, Instagram, Linkedin, Users } from 'lucide-react';
+import { ArrowUpRight, Users } from 'lucide-react';
 import api from '../api/axios';
+import { FacebookIcon, InstagramIcon, LinkedinIcon } from '../components/SocialIcons';
 import GetInTouch from './GetInTouch';
 import Reviews from './Reviews';
 import SearchPage from './Search';
@@ -107,19 +108,19 @@ const Contact = () => {
         title: '@togetherbuying.in',
         sub: 'Instagram community',
         href: settings.instagramUrl || 'https://instagram.com',
-        Icon: Instagram,
+        Icon: InstagramIcon,
       },
       {
         title: '@togetherbuying.india',
         sub: 'Facebook updates',
         href: settings.facebookUrl || 'https://facebook.com',
-        Icon: Facebook,
+        Icon: FacebookIcon,
       },
       {
         title: '@togetherbuying',
         sub: 'LinkedIn network',
         href: settings.linkedinUrl || 'https://linkedin.com',
-        Icon: Linkedin,
+        Icon: LinkedinIcon,
       },
     ],
     [settings.facebookUrl, settings.instagramUrl, settings.linkedinUrl]
