@@ -3,25 +3,22 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft,
-  Award,
+  ArrowUpRight,
   Building,
   Calendar,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
-  Gift,
   GitCompareArrows,
   Heart,
   Info,
   Loader2,
   MapPin,
   Maximize2,
-  MessageSquare,
   Phone,
   Play,
   Share2,
   ShieldCheck,
-  TrendingUp,
   Users,
   Zap,
 } from 'lucide-react';
@@ -39,12 +36,6 @@ const tabs = [
   { id: 'location', label: 'Location' },
   { id: 'developer', label: 'Developer' },
 ];
-
-const ordinal = (value) => {
-  const suffixes = ['th', 'st', 'nd', 'rd'];
-  const normalized = value % 100;
-  return value + (suffixes[(normalized - 20) % 10] || suffixes[normalized] || suffixes[0]);
-};
 
 const getImageUrl = (image) => {
   if (!image) return '';
@@ -264,15 +255,14 @@ const PropertyDetails = () => {
     );
   }
 
-  const groupMembers = property.groups?.[0]?.members?.filter((member) => member.isActive !== false) || [];
   const userGroup = property.groups?.find((group) =>
     group.members?.some((member) => member.userId === user?.id && member.isActive !== false)
   );
   const activeGroup = userGroup || property.groups?.[0];
+  const groupMembers = activeGroup?.members?.filter((member) => member.isActive !== false) || [];
   const isMember = Boolean(userGroup);
   const maxMembers = Number(activeGroup?.maxMembers || property.targetGroupSize || 5);
   const currentMembers = Math.min(Math.max(liveMembersCount, groupMembers.length), maxMembers);
-  const fillPercent = maxMembers > 0 ? Math.min((currentMembers / maxMembers) * 100, 100) : 0;
   const targetPrice = Number(property.price) || 0;
   const originalPrice = Number(property.originalPrice || property.developerPrice) || targetPrice;
   const savings = Math.max(originalPrice - targetPrice, 0);
@@ -283,7 +273,7 @@ const PropertyDetails = () => {
   const developerName = property.developer?.name || 'Institutional Developer';
   const developerLogo = property.developer?.logo || property.developer?.logoUrl;
   const couponDownloads = Number(property.couponDownloads || property.downloadCount || property.trackingCount) || currentMembers;
-  const visibleMembers = groupMembers.slice(0, 4);
+  const joinedMemberRows = groupMembers;
 
   const moveImage = (direction) => {
     setActiveImageIndex((currentIndex) => {
@@ -499,18 +489,18 @@ const PropertyDetails = () => {
                 <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
                   <div>
                     <p className="text-xs font-bold tracking-[0.2em] text-[#df472b]">Property Details</p>
-                    <h2 className="mt-2 text-3xl font-black text-[#111111]">{property.title}</h2>
+                    <h2 className="mt-2 text-3xl font-semibold">{property.title}</h2>
                     <p className="mt-3 flex items-center gap-2 text-sm font-medium text-[#6c5d53]">
                       <MapPin size={16} className="text-[#df472b]" />
                       {displayLocation}
                     </p>
                   </div>
 
-                  <div className="flex flex-wrap gap-3">
+                  <div className="flex shrink-0 flex-row items-center gap-3">
                     <button
                       type="button"
                       onClick={handleCompare}
-                      className={`inline-flex items-center gap-2 rounded-2xl border px-5 py-3 text-sm font-bold transition-all ${
+                      className={`inline-flex h-14 min-w-[156px] items-center justify-center gap-2 rounded-2xl border px-5 text-sm font-bold transition-all ${
                         isInComparison
                           ? 'border-[#df472b] bg-[#df472b] text-white'
                           : 'border-[#ead7cd] bg-white text-[#241812] hover:border-[#df472b]'
@@ -521,7 +511,7 @@ const PropertyDetails = () => {
                     </button>
                     <button
                       type="button"
-                      className="inline-flex items-center gap-2 rounded-2xl bg-[#df472b] px-5 py-3 text-sm font-bold text-white transition-all hover:bg-[#c83e24]"
+                      className="inline-flex h-14 min-w-[210px] items-center justify-center gap-2 rounded-2xl bg-[#df472b] px-5 text-sm font-bold text-white transition-all hover:bg-[#c83e24]"
                     >
                       <Phone size={16} />
                       Contact Developer
@@ -648,132 +638,79 @@ const PropertyDetails = () => {
                 </AnimatePresence>
               </div>
             </div>
+
           </div>
 
           <aside id="group-buying-panel" className="space-y-6 lg:sticky lg:top-28 lg:self-start">
-            <div className="overflow-hidden rounded-3xl border border-[#f0d8ce] bg-white shadow-[0_18px_50px_rgba(62,35,22,0.08)]">
-              <div className="flex items-center justify-between bg-[#df472b] px-7 py-3 text-white">
-                <div className="flex items-center gap-3">
-                  <Users size={18} />
-                  <span className="text-xs font-bold uppercase tracking-[0.2em]">Group Buying Active</span>
+            <div className="rounded-[28px] border border-[#d8d2cf] bg-white px-5 py-5 shadow-[0_18px_48px_rgba(62,35,22,0.06)]">
+              <div className="flex items-center gap-4">
+                <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#fde9e4] text-[#df472b]">
+                  <Users size={25} fill="currentColor" />
+                </span>
+                <div>
+                  <p className="text-2xl font-semibold text-[#df472b]">
+                    {currentMembers} {currentMembers === 1 ? 'Member' : 'Members'}
+                  </p>
+                  <p className="mt-1 text-base font-semibold text-[#101021]">in this group</p>
                 </div>
-                <span className="rounded-full bg-white/18 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em]">Live</span>
               </div>
 
-              <div className="space-y-6 p-7">
-                <div className="flex items-center gap-2 rounded-2xl border border-[#cfe9d3] bg-[#f3fff4] px-4 py-3 text-[#239a31]">
-                  <TrendingUp size={15} />
-                  <span className="text-xs font-bold uppercase tracking-[0.16em]">1 member joined recently</span>
-                </div>
+              <div className="my-5 h-px bg-[#ded8d4]" />
 
-                <div className="text-center">
-                  <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#9b8a7d]">Current buyers</p>
-                  <p className="mt-2 text-4xl font-black text-[#111111]">
-                    <span className="text-[#df472b]">{currentMembers}</span> {currentMembers === 1 ? 'Family' : 'Families'}
-                  </p>
-                  <p className="mt-2 text-sm font-medium text-[#75675d]">
-                    Be the <span className="font-black text-[#df472b]">{ordinal(currentMembers + 1)} member</span> and unlock savings
-                  </p>
-                </div>
+              <p className="text-xl font-medium leading-7 text-[#101021]">
+                Join more buyers and unlock best savings
+              </p>
 
-                <div>
-                  <div className="mb-4 flex items-center justify-between gap-2">
-                    {[0, 1, 2, 3].map((memberIndex) => {
-                      const member = visibleMembers[memberIndex];
-                      const isFilled = memberIndex < currentMembers;
-                      const avatarSeed = member?.user?.name || member?.userId || memberIndex + 1;
+              <button
+                type="button"
+                onClick={handleJoinGroup}
+                disabled={joining || liveGroupStatus === 'FULL' || isMember}
+                className="mt-6 inline-flex h-14 w-full items-center justify-center gap-2 rounded-lg bg-[#df472b] px-5 text-xl font-semibold text-white transition-all hover:-translate-y-0.5 hover:bg-[#c83e24] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {joining ? <Loader2 size={22} className="animate-spin" /> : isMember ? 'Joined' : 'Join Group'}
+                {!joining && !isMember ? <ArrowUpRight size={22} /> : null}
+              </button>
+
+              <div className="mt-6 border-t border-[#ded8d4] pt-5">
+                <h3 className="text-2xl font-medium text-[#777782]">Joined Members</h3>
+
+                <div className="mt-4 max-h-[260px] space-y-3 overflow-y-auto pr-2 [scrollbar-color:#c7c7c7_transparent] [scrollbar-width:thin]">
+                  {joinedMemberRows.length > 0 ? (
+                    joinedMemberRows.map((member, memberIndex) => {
+                      const memberName = member.user?.name || member.user?.email?.split('@')[0] || `Member ${memberIndex + 1}`;
+                      const memberCity = member.user?.city || property.city || property.locality || 'Delhi NCR';
+                      const avatarSeed = member.user?.name || member.userId || memberIndex + 1;
+
                       return (
-                        <div key={memberIndex} className="flex flex-col items-center gap-2">
-                          <div className={`h-12 w-12 overflow-hidden rounded-full border-2 ${isFilled ? 'border-[#df472b]' : 'border-dashed border-[#e4c8bb] opacity-50'}`}>
+                        <div
+                          key={member.id || member.userId || memberIndex}
+                          className="flex items-center gap-3 rounded-xl border-2 border-[#ffad9e] bg-[#f7d8d1] px-3 py-3"
+                        >
+                          <div className="h-12 w-12 shrink-0 overflow-hidden rounded-full border-2 border-[#ff8069] bg-white p-0.5">
                             <img
-                              src={member?.user?.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${avatarSeed}`}
-                              alt=""
-                              className="h-full w-full object-cover"
+                              src={member.user?.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${avatarSeed}`}
+                              alt={memberName}
+                              className="h-full w-full rounded-full object-cover"
                             />
                           </div>
-                          <p className={`text-[10px] font-bold ${isFilled ? 'text-[#45362d]' : 'text-[#c2aea4]'}`}>
-                            {isFilled ? member?.user?.name?.split(' ')[0] || `M${memberIndex + 1}` : '-'}
-                          </p>
+
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-base font-semibold text-black">{memberName}</p>
+                            <p className="truncate text-sm font-medium text-[#6f6965]">{memberCity}</p>
+                            <p className="text-sm font-semibold text-[#df472b]">
+                              {property.bhk ? `${property.bhk} BHK` : property.category || 'Property'}
+                            </p>
+                          </div>
+
+                          <CheckCircle2 size={22} className="shrink-0 text-[#df472b]" fill="currentColor" />
                         </div>
                       );
-                    })}
-                    <div className="flex flex-col items-center gap-2">
-                      <div className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-dashed border-[#df472b] bg-[#fff0ea] text-[#df472b]">
-                        <Users size={17} />
-                      </div>
-                      <p className="text-[10px] font-bold text-[#df472b]">You?</p>
+                    })
+                  ) : (
+                    <div className="flex min-h-[150px] items-center justify-center rounded-xl border border-dashed border-[#f2beb4] bg-[#fff8f5] px-5 text-center text-sm font-semibold text-[#9b8a7d]">
+                      No members joined yet
                     </div>
-                  </div>
-
-                  <div className="h-2 overflow-hidden rounded-full bg-[#f1d6ca]">
-                    <motion.div
-                      className="h-full rounded-full bg-[#df472b]"
-                      initial={{ width: 0 }}
-                      animate={{ width: `${fillPercent}%` }}
-                      transition={{ duration: 0.8, ease: 'easeOut' }}
-                    />
-                  </div>
-                  <div className="mt-2 flex justify-between text-[11px] font-bold text-[#9b8a7d]">
-                    <span>{currentMembers} joined</span>
-                    <span>{maxMembers} target</span>
-                  </div>
-                </div>
-
-                <div className="h-px bg-[#f0d8ce]" />
-
-                <div>
-                  <div className="flex items-end justify-between gap-4">
-                    <div>
-                      <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#9b8a7d]">Group Price</p>
-                      <p className="mt-1 text-3xl font-black text-[#111111]">{formatCurrency(targetPrice)}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#9b8a7d]">Market Price</p>
-                      <p className="mt-1 text-xl font-bold text-[#8a8783] line-through">{formatCurrency(originalPrice)}</p>
-                    </div>
-                  </div>
-
-                  {savings > 0 ? (
-                    <div className="mt-4 flex items-center gap-2 rounded-2xl border border-[#cfe9d3] bg-[#f3fff4] px-4 py-3 text-[#239a31]">
-                      <Award size={16} />
-                      <span className="text-sm font-bold">Save up to {formatCurrency(savings)} with group buying</span>
-                    </div>
-                  ) : null}
-                </div>
-
-                {isMember ? (
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="flex h-14 items-center justify-center gap-2 rounded-2xl border border-[#cfe9d3] bg-[#f3fff4] py-4 text-sm font-bold text-[#239a31]">
-                      <CheckCircle2 size={17} />
-                      Joined
-                    </div>
-                    <a
-                      href={activeGroup?.whatsappGroupLink || '#'}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex h-14 items-center justify-center gap-2 rounded-2xl bg-[#25D366] py-4 text-sm font-bold text-white"
-                    >
-                      <MessageSquare size={17} />
-                      Group Chat
-                    </a>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={handleJoinGroup}
-                    disabled={joining || liveGroupStatus === 'FULL'}
-                    className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#df472b] px-5 py-4 text-sm font-bold uppercase tracking-[0.16em] text-white shadow-[0_16px_30px_rgba(223,71,43,0.22)] transition-all hover:-translate-y-0.5 hover:bg-[#c83e24] disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {joining ? <Loader2 size={18} className="animate-spin" /> : <><Users size={17} /> Join This Group</>}
-                  </button>
-                )}
-
-                <div className="flex items-center justify-between gap-3 rounded-2xl border border-[#f0d8ce] bg-[#fffaf6] px-4 py-3">
-                  <span className="flex items-center gap-2 text-xs font-bold text-[#df472b]">
-                    <Gift size={15} />
-                    Get upto {discountPercent || 3}% extra discount
-                  </span>
-                  <span className="text-[11px] font-semibold text-[#8b7d72]">{couponDownloads || currentMembers} used coupon</span>
+                  )}
                 </div>
               </div>
             </div>
