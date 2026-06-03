@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import {
-  Heart, Share2, Phone, TrendingUp, Info, ShieldCheck, MapPin,
+  Heart, Share2, Phone, TrendingUp, Info, ShieldCheck, MapPin, Loader2,
   GitCompareArrows,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
@@ -20,10 +20,20 @@ const getOrdinal = (n) => {
 };
 
 const fallbackImage = 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?auto=format&fit=crop&q=80&w=1000';
-const memberNames = ['Ashlesh', 'Shikhar', 'Utkarsh', 'Rakesh', 'Manish'];
 
 const getInitials = (name) =>
-  name.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase();
+  String(name || 'Member').split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase();
+
+const getPrimaryGroup = (property) => property?.groups?.[0] || null;
+
+const getActiveGroupMembers = (group) =>
+  group?.members?.filter((member) => member.isActive !== false) || [];
+
+const getGroupMemberCount = (group) =>
+  group?._count?.members ?? getActiveGroupMembers(group).length;
+
+const getMemberDisplayName = (member, index) =>
+  member?.user?.name || member?.user?.email?.split('@')[0] || `Member ${index + 1}`;
 
 const ActionButton = ({ children, onClick, className = '', whileHover = { scale: 1.06, y: -1 }, whileTap = { scale: 0.94 }, ariaLabel }) => (
   <motion.button
@@ -38,26 +48,53 @@ const ActionButton = ({ children, onClick, className = '', whileHover = { scale:
 );
 
 const Card = ({ property, index = 0, compact = false }) => {
-  const { user } = useAuth();
+  const { user, hasActiveSubscription } = useAuth();
   const socket = useSocket();
   const navigate = useNavigate();
+  const initialGroup = getPrimaryGroup(property);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showEnquiryModal, setShowEnquiryModal] = useState(false);
-  const [liveMembersCount, setLiveMembersCount] = useState(property?.groups?.[0]?._count?.members || 0);
+  const [activeGroup, setActiveGroup] = useState(initialGroup);
+  const [liveMembers, setLiveMembers] = useState(() => getActiveGroupMembers(initialGroup));
+  const [liveMembersCount, setLiveMembersCount] = useState(() => getGroupMemberCount(initialGroup));
+  const [joining, setJoining] = useState(false);
 
   useEffect(() => {
-    if (!property) return;
-    const groupId = property.groups?.[0]?.id;
+    const nextGroup = getPrimaryGroup(property);
+    setActiveGroup(nextGroup);
+    setLiveMembers(getActiveGroupMembers(nextGroup));
+    setLiveMembersCount(getGroupMemberCount(nextGroup));
+  }, [property]);
+
+  const applyGroupSnapshot = useCallback((group) => {
+    setActiveGroup(group || null);
+    setLiveMembers(getActiveGroupMembers(group));
+    setLiveMembersCount(getGroupMemberCount(group));
+  }, []);
+
+  const refreshGroupMembers = useCallback(async () => {
+    if (!property?.id) return;
+    const res = await api.get(`/groups?propertyId=${property.id}`);
+    applyGroupSnapshot(res.data?.groups?.[0] || null);
+  }, [applyGroupSnapshot, property?.id]);
+
+  useEffect(() => {
+    const groupId = activeGroup?.id;
     if (!socket || !groupId) return;
+
+    const handleMemberJoined = (data) => {
+      if (data.groupId !== groupId) return;
+      if (typeof data.memberCount === 'number') setLiveMembersCount(data.memberCount);
+      refreshGroupMembers();
+    };
+
     socket.emit('join-group-room', groupId);
-    socket.on('member-joined', (data) => {
-      if (data.groupId === groupId) setLiveMembersCount(data.memberCount);
-    });
+    socket.on('member-joined', handleMemberJoined);
     return () => {
       socket.emit('leave-group-room', groupId);
-      socket.off('member-joined');
+      socket.off('member-joined', handleMemberJoined);
     };
-  }, [socket, property]);
+  }, [activeGroup?.id, refreshGroupMembers, socket]);
 
   if (!property) return null;
 
@@ -65,14 +102,16 @@ const Card = ({ property, index = 0, compact = false }) => {
   const originalPrice = Number(property.originalPrice || property.developerPrice) || targetPrice * 1.22;
   const savings = Math.max(originalPrice - targetPrice, 0);
   const discountPercent = Number(property.discountPercent) || (originalPrice ? Math.max(Math.round((savings / originalPrice) * 100), 12) : 18);
-  const activeMembers = Math.max(liveMembersCount, index % 2 === 0 ? 1 : 4);
-  const maxMembers = property.groups?.[0]?.maxMembers || property.targetGroupSize || 6;
+  const activeMembers = liveMembersCount;
+  const maxMembers = activeGroup?.maxMembers || property.targetGroupSize || 6;
   const nextMember = Math.min(activeMembers + 1, maxMembers);
   const viewedCount = Number(property.views || property.viewCount) || 1289 + index * 583;
-  const activityWindow = index % 2 === 0 ? 'last month' : 'last 72 hrs';
+  const joinedLabel = activeMembers === 1 ? '1 member joined' : `${activeMembers} members joined`;
   const familyWord = activeMembers === 1 ? 'family' : 'families';
   const apartmentWord = activeMembers === 1 ? 'apartment' : 'apartments';
-  const shownMembers = Math.min(activeMembers, 4);
+  const visibleMembers = liveMembers.slice(0, 4);
+  const isMember = Boolean(user && liveMembers.some((member) => member.userId === user.id));
+  const hiddenMembersCount = Math.max(activeMembers - visibleMembers.length, 0);
   const imageUrl = property.thumbnailUrl || property.image || property.images?.[0]?.url || property.images?.[0] || fallbackImage;
   const displayLocation = [property.locality || property.location || property.sector, property.city].filter(Boolean).join(', ') || property.address || 'Greater Noida';
   const imageLabel = property.locality || property.location || property.city || 'Greater Noida';
@@ -80,8 +119,10 @@ const Card = ({ property, index = 0, compact = false }) => {
   const subtitle = [displayLocation, configLabel].filter(Boolean).join(' | ');
   const watermarkLabel = property.title?.split(' ')[0]?.slice(0, 10).toUpperCase() || 'HOME';
   const propertyStatusLabel = property.propertyStatus?.name || property.status?.replace(/_/g, ' ') || 'Verified Deal';
-  const visibleMembers = memberNames.slice(0, shownMembers);
-  const memberSummary = visibleMembers.slice(0, 2).join(', ').concat(activeMembers > 2 ? ` +${activeMembers - 2}` : '');
+  const visibleMemberNames = visibleMembers.map((member, memberIndex) => getMemberDisplayName(member, memberIndex));
+  const memberSummary = visibleMemberNames.length
+    ? visibleMemberNames.slice(0, 2).join(', ').concat(activeMembers > 2 ? ` +${activeMembers - 2}` : '')
+    : 'No members yet';
 
   const imageHeightClass = compact ? 'h-[132px] sm:h-[144px]' : 'h-[168px]';
   const contentPadding = compact ? 'px-3.5 py-1.5' : 'px-4 py-2';
@@ -109,7 +150,42 @@ const Card = ({ property, index = 0, compact = false }) => {
     }
   };
 
-  const handleJoinGroup = (e) => { e.preventDefault(); e.stopPropagation(); if (requireLogin()) return; openPropertyDetails(); };
+  const handleJoinGroup = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (requireLogin()) return;
+
+    if (isMember) {
+      toast.success('You already joined this group');
+      return;
+    }
+
+    if (!hasActiveSubscription) {
+      toast.error('Active subscription required');
+      navigate('/subscriptions', { state: { action: 'JOIN_GROUP', propertyId: property.id } });
+      return;
+    }
+
+    setJoining(true);
+    try {
+      const res = await api.post(`/groups/join/${property.id}`);
+      if (res.data.success) {
+        toast.success(res.data.message || 'Successfully joined the group!');
+        if (res.data.group) {
+          applyGroupSnapshot(res.data.group);
+        } else {
+          await refreshGroupMembers();
+        }
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to join group');
+      if (error.response?.data?.needsSubscription) {
+        navigate('/subscriptions', { state: { action: 'JOIN_GROUP', propertyId: property.id } });
+      }
+    } finally {
+      setJoining(false);
+    }
+  };
   const handleWishlist = async (e) => {
     e.preventDefault(); e.stopPropagation();
     if (requireLogin()) return;
@@ -249,7 +325,7 @@ const Card = ({ property, index = 0, compact = false }) => {
             </div>
             <div className="mt-1.5 flex items-center gap-1 text-[10px] font-medium text-[#dc4d33]">
               <TrendingUp size={11} />
-              {activeMembers} joined in {activityWindow}
+              {joinedLabel}
             </div>
             <p className={`${compact ? 'mt-1 text-[13px]' : 'mt-1.5 text-[14px]'} font-medium leading-tight tracking-[-0.04em] text-[#171717]`}>
               {activeMembers} {familyWord} -&gt; {activeMembers} {apartmentWord}
@@ -260,16 +336,32 @@ const Card = ({ property, index = 0, compact = false }) => {
             <div className="mt-2.5 flex items-end justify-between gap-3">
               <div className="flex min-w-0 flex-col gap-1.5">
                 <div className="flex items-center pl-1">
-                  {visibleMembers.map((member, mi) => (
-                    <div key={member}
+                  {visibleMembers.map((member, mi) => {
+                    const memberName = getMemberDisplayName(member, mi);
+                    const avatarUrl = member.user?.avatar;
+
+                    return (
+                    <div key={member.id || member.userId || memberName}
                       className={`relative -ml-1.5 flex ${compact ? 'h-[26px] w-[26px] text-[0.66rem]' : 'h-[30px] w-[30px] text-[0.72rem]'} items-center justify-center rounded-full border-2 border-white bg-[#f9dcd6] font-black text-[#8f2114] shadow-[0_6px_14px_rgba(143,33,20,0.12)] first:ml-0`}
                       style={{ zIndex: visibleMembers.length - mi + 1 }}>
-                      {getInitials(member)}
+                      {avatarUrl ? (
+                        <img src={avatarUrl} alt={memberName} className="h-full w-full rounded-full object-cover" />
+                      ) : (
+                        getInitials(memberName)
+                      )}
                     </div>
-                  ))}
-                  <div className="relative ml-2 flex h-[30px] min-w-[2.2rem] items-center justify-center rounded-full border-2 border-dashed border-[#ef4f35] bg-white px-2 text-[0.6rem] font-black text-[#ef4f35]" style={{ zIndex: 1 }}>
-                    You
-                  </div>
+                    );
+                  })}
+                  {hiddenMembersCount > 0 ? (
+                    <div className="relative -ml-1.5 flex h-[30px] min-w-[2rem] items-center justify-center rounded-full border-2 border-white bg-[#f9dcd6] px-2 text-[0.62rem] font-black text-[#8f2114]" style={{ zIndex: 1 }}>
+                      +{hiddenMembersCount}
+                    </div>
+                  ) : null}
+                  {!isMember ? (
+                    <div className="relative ml-2 flex h-[30px] min-w-[2.2rem] items-center justify-center rounded-full border-2 border-dashed border-[#ef4f35] bg-white px-2 text-[0.6rem] font-black text-[#ef4f35]" style={{ zIndex: 1 }}>
+                      You
+                    </div>
+                  ) : null}
                 </div>
                 <p className="text-[10px] text-[#4d4d4d]">{memberSummary}</p>
               </div>
@@ -280,9 +372,9 @@ const Card = ({ property, index = 0, compact = false }) => {
           </div>
 
           <div className="mt-1.5 grid grid-cols-2 gap-2">
-            <button type="button" onClick={handleJoinGroup}
-              className={`${actionBtnClass} border border-[#2a241f]/20 bg-[#ff6647] font-semibold px-3 text-white tracking-[-0.03em] transition-all hover:-translate-y-0.5 hover:border-[#c93f26] hover:text-white`}>
-              Join Group
+            <button type="button" onClick={handleJoinGroup} disabled={joining || isMember}
+              className={`${actionBtnClass} border border-[#2a241f]/20 bg-[#ff6647] font-semibold px-3 text-white tracking-[-0.03em] transition-all hover:-translate-y-0.5 hover:border-[#c93f26] hover:text-white disabled:cursor-not-allowed disabled:opacity-70`}>
+              {joining ? <Loader2 size={18} className="mx-auto animate-spin" /> : isMember ? 'Joined' : 'Join Group'}
             </button>
             <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); openPropertyDetails(); }}
               className={`${actionBtnClass} border border-[#2a241f]/20 bg-white px-3 font-medium tracking-[-0.03em] text-[#171717] transition-all hover:-translate-y-0.5 hover:border-[#171717] hover:bg-[#faf7f3]`}>

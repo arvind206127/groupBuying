@@ -3,7 +3,7 @@ import { ArrowUpRight, Loader2, Search as SearchIcon, Sparkles } from 'lucide-re
 import { Link, useLocation } from 'react-router-dom';
 import api from '../api/axios';
 
-const MAX_VISIBLE_ITEMS = 5;
+const MAX_VISIBLE_ITEMS = 4;
 
 const buildSearchFilters = (searchString) => {
   const params = new URLSearchParams(searchString);
@@ -35,16 +35,16 @@ const SearchSuggestionColumn = ({ title, items }) => {
 
   return (
     <div>
-      <h2 className="max-w-[220px] text-[18px] font-semibold leading-[1.1] tracking-[-0.04em] text-[#171717] sm:text-[16px]">
+      <h2 className="max-w-[220px] text-[17px] font-semibold leading-[1.08] tracking-[-0.04em] text-[#171717] sm:text-[16px]">
         {title}
       </h2>
 
-      <div className="mt-4 space-y-3.5">
+      <div className="mt-3 space-y-2.5">
         {visibleItems.map((item) => (
           <Link
             key={item.label}
             to={item.href}
-            className={`block text-[14px] leading-6 tracking-[-0.02em] transition-colors hover:text-[#df472b] sm:text-[15px] ${
+            className={`block text-[14px] leading-5 tracking-[-0.02em] transition-colors hover:text-[#df472b] sm:text-[15px] ${
               item.highlight ? 'text-[#df472b]' : 'text-[#1c3f7c]'
             }`}
           >
@@ -57,7 +57,7 @@ const SearchSuggestionColumn = ({ title, items }) => {
         <button
           type="button"
           onClick={() => setExpanded((value) => !value)}
-          className="mt-4 text-[13px] font-medium tracking-[-0.02em] text-[#1c3f7c] transition-colors hover:text-[#df472b] sm:text-[14px]"
+          className="mt-3 text-[13px] font-medium tracking-[-0.02em] text-[#1c3f7c] transition-colors hover:text-[#df472b] sm:text-[14px]"
         >
           {expanded ? 'Show Less' : `View ${remainingCount} More`}
         </button>
@@ -294,17 +294,17 @@ const SearchPage = () => {
   return (
     <div className=" pb-16 pt-24 sm:pb-24 sm:pt-28 xl:pt-8 xl:pb-[2px]">
       <div className="mx-auto max-w-[1540px] home-page-gutter">
-        <div className="rounded-[32px] border border-[#ece4dc] bg-[linear-gradient(180deg,#ffffff_0%,#fcf8f5_100%)] px-6 py-6 shadow-[0_24px_70px_rgba(15,23,42,0.06)] sm:px-8 sm:py-10 lg:px-10">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+        <div className="rounded-[32px] border border-[#ece4dc] bg-[linear-gradient(180deg,#ffffff_0%,#fcf8f5_100%)] px-6 py-5 shadow-[0_24px_70px_rgba(15,23,42,0.06)] sm:px-8 sm:py-8 lg:px-10">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <div className="inline-flex items-center gap-2 rounded-full bg-[#fff2eb] px-3 py-2 text-[12px] font-bold tracking-[0.14em] text-[#df472b]">
+              <div className="inline-flex items-center gap-2 rounded-full bg-[#fff2eb] px-3 py-1.5 text-[12px] font-bold tracking-[0.14em] text-[#df472b]">
                 <Sparkles size={12} />
                 Search Intelligence
               </div>
-              <h1 className="mt-5 text-[28px] font-semibold leading-[0.98] tracking-[-0.05em] text-[#102f63] sm:text-[34px] lg:text-[40px]">
+              <h1 className="mt-4 text-[28px] font-semibold leading-[0.98] tracking-[-0.05em] text-[#102f63] sm:text-[34px] lg:text-[38px]">
                 Related to your search
               </h1>
-              <p className="mt-4 max-w-3xl text-[15px] leading-7 text-[#66605a] sm:text-[16px]">
+              <p className="mt-3 max-w-3xl text-[15px] leading-6 text-[#66605a] sm:text-[16px]">
                 {filters.search
                   ? `Showing smart suggestions for "${filters.search}" so you can jump straight to the most relevant properties.`
                   : `Browse curated suggestions from your current property filters and jump directly to matching listings.`}
@@ -352,7 +352,7 @@ const SearchPage = () => {
               </div>
             </div>
           ) : suggestionSections.length > 0 ? (
-            <div className="mt-12 grid gap-10 md:grid-cols-2 xl:grid-cols-5">
+            <div className="mt-8 grid gap-7 md:grid-cols-2 xl:grid-cols-5">
               {suggestionSections.slice(0, 5).map((section) => (
                 <SearchSuggestionColumn
                   key={`${section.title}-${section.items.length}`}

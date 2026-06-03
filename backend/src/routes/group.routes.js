@@ -4,6 +4,15 @@ const { authenticate, authorize, optionalAuth } = require('../middleware/auth.mi
 const db = require('../config/database');
 const { notifyGroupJoin, notifyGroupStatusChange } = require('../services/notification.service');
 
+const groupMembersInclude = {
+  members: {
+    where: { isActive: true },
+    include: { user: { select: { id: true, name: true, avatar: true, city: true } } },
+    orderBy: { joinedAt: 'desc' },
+  },
+  _count: { select: { members: { where: { isActive: true } } } },
+};
+
 // GET /api/groups - List groups
 router.get('/', optionalAuth, async (req, res, next) => {
   try {
@@ -16,11 +25,7 @@ router.get('/', optionalAuth, async (req, res, next) => {
       where,
       include: {
         property: { select: { id: true, title: true, city: true, price: true, thumbnailUrl: true, bhk: true } },
-        members: {
-          where: { isActive: true },
-          include: { user: { select: { id: true, name: true, avatar: true } } },
-        },
-        _count: { select: { members: true } },
+        ...groupMembersInclude,
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -165,9 +170,15 @@ router.post('/join/:propertyId', authenticate, async (req, res, next) => {
        }
      }
 
+    const updatedGroup = await db.group.findUnique({
+      where: { id: group.id },
+      include: groupMembersInclude,
+    });
+
     res.status(201).json({ 
       success: true, 
       message: memberCount >= targetSize ? 'Joined the Over-subscription Waitlist.' : 'Successfully joined the group!',
+      group: updatedGroup,
     });
   } catch (error) { next(error); }
 });

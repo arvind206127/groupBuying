@@ -158,14 +158,16 @@ router.get('/', optionalAuth, async (req, res, next) => {
       propertyStatus: { select: { id: true, name: true } },
       _count: { select: { groups: true } },
       groups: {
-        where: { status: 'OPEN' },
+        where: { status: { in: ['OPEN', 'FULL', 'NEGOTIATING'] } },
         include: {
-          _count: { select: { members: true } },
+          _count: { select: { members: { where: { isActive: true } } } },
           members: {
-            take: 2,
-            include: { user: { select: { name: true, avatar: true } } }
-          }
-        }
+            where: { isActive: true },
+            include: { user: { select: { id: true, name: true, avatar: true, city: true } } },
+            orderBy: { joinedAt: 'desc' },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
       },
     };
 
@@ -357,7 +359,18 @@ router.get('/suggest/smart', authenticate, async (req, res, next) => {
       include: {
         developer: { select: { id: true, name: true } },
         propertyStatus: { select: { id: true, name: true } },
-        groups: { where: { status: 'OPEN' }, select: { id: true, _count: { select: { members: true } }, maxMembers: true } },
+        groups: {
+          where: { status: { in: ['OPEN', 'FULL', 'NEGOTIATING'] } },
+          include: {
+            _count: { select: { members: { where: { isActive: true } } } },
+            members: {
+              where: { isActive: true },
+              include: { user: { select: { id: true, name: true, avatar: true, city: true } } },
+              orderBy: { joinedAt: 'desc' },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+        },
       },
       take: 6,
       orderBy: { isFeatured: 'desc' },
