@@ -56,9 +56,10 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem('token');
   };
 
-  const isAdmin = user?.role === 'ADMIN';
+  const isAdmin = user?.portal === 'admin' || user?.role === 'ADMIN' || user?.role === 'SUPERADMIN';
+  const isDeveloper = user?.portal === 'developer';
   const isRM = user?.role === 'RM';
-  const isBuyer = user?.role === 'BUYER';
+  const isBuyer = user?.portal === 'user' || user?.role === 'BUYER';
   
   const hasActiveSubscription = user?._count?.subscriptions > 0 || user?.subscriptions?.some(s => s.status === 'ACTIVE');
   const activeSubscription = user?.subscriptions?.find(s => s.status === 'ACTIVE');
@@ -66,7 +67,7 @@ export const AuthProvider = ({ children }) => {
 
   return (
     <AuthContext.Provider value={{ 
-      user, token, loading, handleLogin, handleLogout, isAdmin, isRM, isBuyer, 
+      user, token, loading, handleLogin, handleLogout, isAdmin, isDeveloper, isRM, isBuyer, 
       setUser, hasActiveSubscription, subscriptionTier, refreshUser 
     }}>
       {children}

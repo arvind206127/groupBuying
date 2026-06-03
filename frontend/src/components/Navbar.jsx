@@ -10,6 +10,7 @@ import {
 import { clsx } from 'clsx';
 import api from '../api/axios';
 import NotificationDropdown from './NotificationDropdown';
+import LoginModal from './LoginModal';
 
 const Navbar = () => {
   const { user, handleLogout, isAdmin, isRM, subscriptionTier } = useAuth();
@@ -18,6 +19,7 @@ const Navbar = () => {
   const location = useLocation();
   const [showNotifications, setShowNotifications] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [showLoginModal, setShowLoginModal] = useState(false);
 
   const [siteName, setSiteName] = useState("Group buying.in");
 
@@ -67,11 +69,17 @@ const Navbar = () => {
     { name: 'Contact Us', path: '/contact' },
   ];
 
+  const openLoginModal = () => {
+    setIsOpen(false);
+    setShowLoginModal(true);
+  };
+
   return (
+    <>
     <nav className={clsx(
-      'fixed top-0 inset-x-0 z-[100] bg-white border-b border-slate-100 transition-all duration-300',
-      scrolled ? 'shadow-sm' : 'shadow-none'
-    )}>
+        'fixed top-0 inset-x-0 z-[100] bg-white border-b border-slate-100 transition-all duration-300',
+        scrolled ? 'shadow-sm' : 'shadow-none'
+      )}>
       <div className="mx-auto flex h-[74px] max-w-[1680px] items-center justify-between home-page-gutter md:h-[86px] lg:grid lg:grid-cols-[220px_1fr_280px] xl:grid-cols-[260px_1fr_340px]">
         {/* Logo */}
         <Link to="/" className="relative flex w-[118px] shrink-0 flex-col justify-center gap-0.5 leading-[0.78] sm:w-[152px]">
@@ -189,17 +197,15 @@ const Navbar = () => {
                   </div>
                 )}
               </div>
-              <button onClick={handleLogout} className="w-12 h-12 rounded-full bg-slate-50 text-slate-400 flex items-center justify-center hover:text-red-500 transition-all">
-                <LogOut size={18} />
-              </button>
             </div>
           ) : (
-            <Link
-              to="/login"
+            <button
+              type="button"
+              onClick={openLoginModal}
               className="flex h-11 items-center justify-center rounded-full bg-[#db4a2b] px-5 text-base font-semibold text-white transition-all hover:bg-[#c94125] xl:h-[56px] xl:px-7 xl:text-xl"
             >
               Sign In
-            </Link>
+            </button>
           )}
         </div>
 
@@ -241,13 +247,17 @@ const Navbar = () => {
               <div className="pt-6 border-t border-slate-100 flex flex-col gap-4">
                 <Link to="/stay" onClick={() => setIsOpen(false)} className="w-full rounded-2xl bg-[#fff4ef] py-4 text-center text-base uppercase tracking-widest text-[#db4a2b] sm:text-lg">Stay</Link>
                 <Link to="/corporate" onClick={() => setIsOpen(false)} className="w-full rounded-2xl bg-slate-100 py-4 text-center text-base uppercase tracking-widest text-slate-900 sm:text-xl">Corporate</Link>
-                <Link to="/login" onClick={() => setIsOpen(false)} className="w-full rounded-2xl bg-orange-600 py-4 text-center text-base uppercase tracking-widest text-white sm:text-lg">Sign In</Link>
+                {!user ? (
+                  <button type="button" onClick={openLoginModal} className="w-full rounded-2xl bg-orange-600 py-4 text-center text-base uppercase tracking-widest text-white sm:text-lg">Sign In</button>
+                ) : null}
               </div>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
     </nav>
+    <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} />
+    </>
   );
 };
 

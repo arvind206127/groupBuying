@@ -11,10 +11,27 @@ const authenticate = async (req, res, next) => {
     const token = authHeader.split(' ')[1];
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    const user = await db.user.findUnique({
-      where: { id: decoded.userId },
-      select: { id: true, email: true, name: true, role: true, isActive: true, isVerified: true },
-    });
+    const portal = decoded.portal || 'user';
+    let user;
+
+    if (portal === 'admin') {
+      user = await db.admin.findUnique({
+        where: { id: decoded.userId },
+        select: { id: true, email: true, name: true, role: true, isActive: true },
+      });
+    } else if (portal === 'developer') {
+      user = await db.developer.findUnique({
+        where: { id: decoded.userId },
+        select: { id: true, email: true, name: true, isActive: true },
+      });
+    } else {
+      user = await db.user.findUnique({
+        where: { id: decoded.userId },
+        select: { id: true, email: true, name: true, role: true, isActive: true, isVerified: true },
+      });
+    }
+
+    if (user) user.portal = portal;
 
     if (!user || !user.isActive) {
       return res.status(401).json({ success: false, message: 'User not found or deactivated' });
@@ -53,10 +70,27 @@ const optionalAuth = async (req, res, next) => {
     }
     const token = authHeader.split(' ')[1];
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = await db.user.findUnique({
-      where: { id: decoded.userId },
-      select: { id: true, email: true, name: true, role: true },
-    });
+    const portal = decoded.portal || 'user';
+    let user;
+
+    if (portal === 'admin') {
+      user = await db.admin.findUnique({
+        where: { id: decoded.userId },
+        select: { id: true, email: true, name: true, role: true },
+      });
+    } else if (portal === 'developer') {
+      user = await db.developer.findUnique({
+        where: { id: decoded.userId },
+        select: { id: true, email: true, name: true },
+      });
+    } else {
+      user = await db.user.findUnique({
+        where: { id: decoded.userId },
+        select: { id: true, email: true, name: true, role: true },
+      });
+    }
+
+    if (user) user.portal = portal;
     req.user = user;
     next();
   } catch {

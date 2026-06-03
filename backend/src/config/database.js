@@ -13,6 +13,7 @@ const pool = mysql.createPool({
 
 const models = {
   user: { table: 'users', json: [], bool: ['isVerified', 'isActive'], updatedAt: true },
+  admin: { table: 'admins', json: ['permissions'], bool: ['isActive'], updatedAt: true },
   oTP: { table: 'otps', json: [], bool: ['isUsed'] },
   developer: { table: 'developers', json: [], bool: ['isActive'], updatedAt: true },
   propertyStatus: { table: 'property_statuses', json: [], bool: ['isActive'], updatedAt: true },
@@ -89,9 +90,7 @@ const relations = {
   projectVideo: {
     property: { type: 'one', model: 'property', local: 'propertyId', foreign: 'id' },
   },
-  oTP: {
-    user: { type: 'one', model: 'user', local: 'email', foreign: 'email' },
-  },
+  oTP: {},
 };
 
 const isObject = (value) => value && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date);

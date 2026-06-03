@@ -10,7 +10,7 @@ import 'jspdf-autotable';
 import { 
     Users, Building2, Handshake, MessageSquare, 
     BarChart3, LogOut, Search, Plus, Edit, Trash2, 
-    X, Loader2, ChevronRight, Download, Mail, Phone, Sparkles, Play, Settings
+    X, Loader2, ChevronRight, Download, Mail, Phone, Sparkles, Play, Settings, ShieldCheck
 } from 'lucide-react';
 
 const sortByName = (records = []) => [...records].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
@@ -43,7 +43,7 @@ const HERO_DEFAULTS = {
 };
 
 const AdminDashboard = () => {
-    const { handleLogout } = useAuth();
+    const { user, handleLogout } = useAuth();
     const [activeTab, setActiveTab] = useState('overview');
     const [loading, setLoading] = useState(true);
     const [stats, setStats] = useState(null);
@@ -65,6 +65,23 @@ const AdminDashboard = () => {
         fetchStats();
         fetchSupportData();
     }, []);
+
+    // Effect to redirect to a permitted tab if the user doesn't have access to the current one
+    useEffect(() => {
+        if (user && user.role === 'ADMIN') {
+            let perms = user.permissions;
+            if (typeof perms === 'string') {
+                try { perms = JSON.parse(perms); } catch(e) { perms = []; }
+            }
+            if (!Array.isArray(perms)) perms = [];
+
+            if (perms.length > 0 && !perms.includes(activeTab)) {
+                setActiveTab(perms[0]);
+            } else if (perms.length === 0 && activeTab !== 'overview') {
+                setActiveTab('overview');
+            }
+        }
+    }, [user, activeTab]);
 
     useEffect(() => {
         if (socket) {
@@ -162,6 +179,8 @@ const AdminDashboard = () => {
                     const keyMap = {
                         'properties': 'properties',
                         'users': 'users',
+                        'admins': 'admins',
+                        'developers': 'developers',
                         'leads': 'leads',
                         'groups': 'groups',
                         'subscriptions': 'subscriptions',
@@ -427,6 +446,36 @@ const AdminDashboard = () => {
                     { name: 'description', label: 'Description', type: 'textarea', col: 'col-span-2' },
                     { name: 'isActive', label: 'Active Status', type: 'select', options: [{ v: true, l: 'Active' }, { v: false, l: 'Inactive' }] },
                 ];
+            case 'admins':
+                return [
+                    { name: 'name', label: 'Admin Name', type: 'text' },
+                    { name: 'email', label: 'Email Address', type: 'text' },
+                    { name: 'phone', label: 'Phone Number', type: 'text' },
+                    { name: 'permissions', label: 'Tab Access Permissions', type: 'checkbox_group', col: 'col-span-2', options: [
+                        { v: 'overview', l: 'Overview' },
+                        { v: 'properties', l: 'Properties' },
+                        { v: 'project-videos', l: 'Project Videos' },
+                        { v: 'groups', l: 'Groups' },
+                        { v: 'subscriptions', l: 'Subscriptions' },
+                        { v: 'leads', l: 'Leads' },
+                        { v: 'users', l: 'Users' },
+                        { v: 'admins', l: 'Admins' },
+                        { v: 'developers', l: 'Developers' },
+                        { v: 'floating-reel', l: 'Floating Reel' },
+                        { v: 'settings', l: 'Site Settings' }
+                    ]},
+                    { name: 'isActive', label: 'Active Status', type: 'select', options: [{ v: true, l: 'Active' }, { v: false, l: 'Inactive' }] },
+                ];
+            case 'developers':
+                return [
+                    { name: 'name', label: 'Developer Name', type: 'text' },
+                    { name: 'email', label: 'Email Address', type: 'text' },
+                    { name: 'phone', label: 'Phone Number', type: 'text' },
+                    { name: 'city', label: 'Headquarters City', type: 'text' },
+                    { name: 'website', label: 'Website URL', type: 'text' },
+                    { name: 'description', label: 'Developer Description', type: 'textarea', col: 'col-span-2' },
+                    { name: 'isActive', label: 'Active Status', type: 'select', options: [{ v: true, l: 'Active' }, { v: false, l: 'Inactive' }] },
+                ];
             case 'properties':
                 return [
                     { name: 'title', label: 'Property Title', type: 'text' },
@@ -505,7 +554,7 @@ const AdminDashboard = () => {
         }
     };
 
-    const menuItems = [
+    const allMenuItems = [
         { id: 'overview', name: 'Dashboard', icon: BarChart3, section: 'main' },
         { id: 'project-videos', name: 'Project Videos', icon: Play, section: 'main' },
         { id: 'properties', name: 'Properties', icon: Building2, section: 'main' },
@@ -513,22 +562,33 @@ const AdminDashboard = () => {
         { id: 'subscriptions', name: 'Subscriptions', icon: Sparkles, section: 'management' },
         { id: 'leads', name: 'Leads', icon: MessageSquare, section: 'management' },
         { id: 'users', name: 'Users', icon: Users, section: 'management' },
+        { id: 'admins', name: 'Admins', icon: ShieldCheck, section: 'management' },
+        { id: 'developers', name: 'Developers', icon: Building2, section: 'management' },
         { id: 'floating-reel', name: 'Floating Reel', icon: Play, section: 'management' },
         { id: 'settings', name: 'Site Settings', icon: Settings, section: 'management' },
     ];
 
+    const menuItems = allMenuItems.filter(item => {
+        if (user?.role === 'SUPERADMIN') return true;
+        if (user?.role === 'ADMIN') {
+            const perms = user?.permissions || [];
+            return perms.includes(item.id);
+        }
+        return true; // Fallback just in case
+    });
+
     return (
-        <div className="min-h-screen bg-[#fff7f1] flex flex-col md:h-screen md:flex-row md:overflow-hidden font-sans">
+        <div className="min-h-screen bg-[#f6f7f9] text-slate-950 flex flex-col md:flex-row md:overflow-hidden font-sans">
             {/* Sidebar */}
-            <div className="w-full md:w-72 bg-[#121212] border-b md:border-b-0 md:border-r border-black flex flex-col md:h-screen z-[100] shrink-0 shadow-2xl shadow-black/20 overflow-x-auto md:overflow-hidden no-scrollbar">
-                <div className="hidden md:flex px-7 py-7 mb-3 flex-col border-b border-white/10">
+            <div className="w-full md:w-[264px] bg-white border-b md:border-b-0 md:border-r border-slate-200 flex flex-col md:h-screen z-[100] shrink-0 shadow-[0_18px_48px_rgba(15,23,42,0.06)] overflow-x-auto md:overflow-hidden no-scrollbar">
+                <div className="hidden md:flex px-6 py-6 mb-2 flex-col border-b border-slate-100 bg-slate-50">
                     <div className="flex items-center gap-3">
-                        <div className="w-11 h-11 rounded-xl bg-[#df472b] flex items-center justify-center shadow-lg shadow-[#df472b]/30">
-                            <Building2 className="text-white" size={20} />
+                        <div className="w-11 h-11 rounded-lg bg-slate-950 flex items-center justify-center text-white shadow-md">
+                            <ShieldCheck size={20} />
                         </div>
                         <div>
-                            <h2 className="text-white font-black text-xl tracking-tight leading-none">Group buying.in</h2>
-                            <p className="text-[#ffb199] font-bold text-[10px] uppercase tracking-widest mt-1">Admin Control Center</p>
+                            <h2 className="text-slate-950 font-bold text-lg tracking-tight leading-none">GroupBuying</h2>
+                            <p className="text-slate-500 font-semibold text-[10px] uppercase tracking-widest mt-1">Admin Center</p>
                         </div>
                     </div>
                 </div>
@@ -536,41 +596,47 @@ const AdminDashboard = () => {
                 <nav className="flex flex-row md:flex-col md:flex-1 md:min-h-0 p-3 md:px-4 md:space-y-1 md:overflow-y-auto custom-scrollbar md:pb-10 whitespace-nowrap">
                     {/* Main Section */}
                     <div className="flex md:flex-col w-full gap-1">
-                        <p className="hidden md:block text-xs font-bold text-white/40 uppercase tracking-widest px-5 mt-4 mb-2">Main</p>
-                        {menuItems.filter(m => m.section === 'main').map((item) => (
-                            <button
-                                key={item.id}
-                                onClick={() => setActiveTab(item.id)}
-                                className={`flex items-center gap-4 px-4 md:px-5 py-3 md:py-4 rounded-xl font-bold transition-all duration-300 shrink-0 ${activeTab === item.id ? 'bg-[#df472b] text-white shadow-lg shadow-[#df472b]/30' : 'text-white/60 hover:bg-white/10 hover:text-white'}`}
-                            >
-                                <item.icon size={18} className={activeTab === item.id ? 'text-white' : 'text-white/45'} />
-                                <span className="text-xs md:text-sm tracking-wide capitalize">{item.name}</span>
-                            </button>
-                        ))}
+                        <p className="hidden md:block text-xs font-semibold text-slate-400 uppercase tracking-widest px-3 mt-4 mb-2">Main</p>
+                        {menuItems.filter(m => m.section === 'main').map((item) => {
+                            const isActive = activeTab === item.id;
+                            return (
+                                <button
+                                    key={item.id}
+                                    onClick={() => setActiveTab(item.id)}
+                                    className={`flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-colors shrink-0 ${isActive ? 'bg-slate-950 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'}`}
+                                >
+                                    <item.icon size={17} className={isActive ? 'text-white' : 'text-slate-500'} />
+                                    <span>{item.name}</span>
+                                </button>
+                            );
+                        })}
                     </div>
 
                     {/* Management Section */}
-                    <div className="flex md:flex-col w-full gap-1 md:border-t md:border-white/10 md:mt-4 md:pt-2">
-                        <p className="hidden md:block text-xs font-bold text-white/40 uppercase tracking-widest px-5 mt-4 mb-2">Management</p>
-                        {menuItems.filter(m => m.section === 'management').map((item) => (
-                            <button
-                                key={item.id}
-                                onClick={() => setActiveTab(item.id)}
-                                className={`flex items-center gap-4 px-4 md:px-5 py-3 md:py-4 rounded-xl font-bold transition-all duration-300 shrink-0 ${activeTab === item.id ? 'bg-[#df472b] text-white shadow-lg shadow-[#df472b]/30' : 'text-white/60 hover:bg-white/10 hover:text-white'}`}
-                            >
-                                <item.icon size={18} className={activeTab === item.id ? 'text-white' : 'text-white/45'} />
-                                <span className="text-xs md:text-sm tracking-wide capitalize">{item.name}</span>
-                            </button>
-                        ))}
+                    <div className="flex md:flex-col w-full gap-1 md:border-t md:border-slate-100 md:mt-4 md:pt-2">
+                        <p className="hidden md:block text-xs font-semibold text-slate-400 uppercase tracking-widest px-3 mt-4 mb-2">Management</p>
+                        {menuItems.filter(m => m.section === 'management').map((item) => {
+                            const isActive = activeTab === item.id;
+                            return (
+                                <button
+                                    key={item.id}
+                                    onClick={() => setActiveTab(item.id)}
+                                    className={`flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-colors shrink-0 ${isActive ? 'bg-slate-950 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'}`}
+                                >
+                                    <item.icon size={17} className={isActive ? 'text-white' : 'text-slate-500'} />
+                                    <span>{item.name}</span>
+                                </button>
+                            );
+                        })}
                     </div>
 
-                    <div className="md:pt-6 md:border-t md:border-white/10 md:mt-4 ml-4 md:ml-0 flex items-center md:block w-full">
+                    <div className="md:pt-6 md:border-t md:border-slate-100 md:mt-auto ml-4 md:ml-0 flex items-center md:block w-full">
                         <button
                             onClick={handleLogout}
-                            className="flex items-center gap-4 px-4 md:px-5 py-3 md:py-4 rounded-xl font-bold transition-all duration-300 text-[#ffb199] hover:bg-white/10 hover:text-white shrink-0 w-full"
+                            className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-md font-semibold transition-colors bg-[#fff2ed] text-[#db4a2b] hover:bg-[#db4a2b] hover:text-white shrink-0 w-full text-sm"
                         >
-                            <LogOut size={18} />
-                            <span className="text-xs md:text-sm tracking-wide capitalize">Logout</span>
+                            <LogOut size={16} />
+                            <span>Logout</span>
                         </button>
                     </div>
                 </nav>
@@ -579,32 +645,33 @@ const AdminDashboard = () => {
             {/* Main Content */}
             <div className="flex-grow min-h-screen md:min-h-0 md:h-screen overflow-y-auto relative w-full">
                 <div className="p-4 md:p-6 lg:p-8 max-w-[1600px] mx-auto">
-                    <header className="relative overflow-hidden rounded-2xl bg-[#151515] border border-black shadow-xl shadow-[#df472b]/10 p-5 md:p-7 lg:p-8 flex flex-col xl:flex-row justify-between xl:items-center gap-6 mb-6 md:mb-8">
-                        <div className="absolute inset-x-0 top-0 h-1.5 bg-[#df472b]" />
-                        <div className="absolute right-0 top-0 h-full w-1/3 bg-[#df472b]/10 pointer-events-none" />
+                    <header className="flex flex-col gap-4 border-b border-slate-200 pb-5 md:flex-row md:items-end md:justify-between mb-6 bg-white p-6 rounded-lg shadow-[0_18px_48px_rgba(15,23,42,0.06)]">
                         <div>
-                            <p className="text-[#ffb199] text-[10px] md:text-xs font-black uppercase tracking-[0.24em] mb-2">Admin Workspace</p>
-                            <h1 className="text-2xl md:text-4xl font-black text-white capitalize tracking-tight">{activeTab.replace('-', ' ')}</h1>
-                            <p className="text-white/60 text-sm mt-2 font-medium">Manage your platform's {activeTab.replace('-', ' ')} efficiently.</p>
+                            <div className="inline-flex items-center gap-2 rounded-md border border-[#f2c6b8] bg-white px-3 py-1 text-sm font-medium text-[#db4a2b] mb-3">
+                                <ShieldCheck size={16} />
+                                Admin Workspace
+                            </div>
+                            <h1 className="text-2xl font-semibold text-slate-950 capitalize">{activeTab.replace('-', ' ')}</h1>
+                            <p className="text-sm leading-6 text-slate-600 mt-2 max-w-2xl">Manage your platform's {activeTab.replace('-', ' ')} efficiently.</p>
                         </div>
 
                         <div className="flex flex-wrap gap-3 items-center">
                             {activeTab !== 'overview' && activeTab !== 'settings' && activeTab !== 'floating-reel' && (
                                 <div className="relative group flex-grow md:flex-grow-0">
-                                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-white/45 group-focus-within:text-[#ffb199] transition-colors" size={16} />
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                                     <input
                                         type="text"
                                         placeholder="Search records..."
                                         value={searchTerm}
                                         onChange={(e) => setSearchTerm(e.target.value)}
-                                        className="pl-12 pr-6 h-11 md:h-12 rounded-xl bg-white/10 shadow-sm border border-white/15 focus:border-[#ffb199] focus:ring-4 focus:ring-[#df472b]/20 w-full md:w-72 transition-all font-semibold text-white placeholder-white/45 text-sm outline-none"
+                                        className="pl-10 pr-4 h-10 rounded-md border border-slate-200 bg-white text-sm text-slate-900 placeholder:text-slate-400 focus:border-[#db4a2b] focus:outline-none focus:ring-1 focus:ring-[#db4a2b] w-full md:w-64 transition-colors"
                                     />
                                 </div>
                             )}
                             {activeTab !== 'overview' && activeTab !== 'users' && activeTab !== 'groups' && activeTab !== 'leads' && activeTab !== 'settings' && activeTab !== 'floating-reel' && (
-                                <button onClick={() => { setEditingItem(null); setFormData({}); setShowModal(true); }} className="h-11 md:h-12 px-6 bg-[#df472b] hover:bg-[#c63d23] text-white flex items-center gap-2 shadow-lg shadow-[#df472b]/30 rounded-xl flex-grow md:flex-grow-0 justify-center transition-all">
-                                    <Plus size={18} />
-                                    <span className="text-xs md:text-sm font-bold whitespace-nowrap">Add New</span>
+                                <button onClick={() => { setEditingItem(null); setFormData({}); setShowModal(true); }} className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-slate-950 px-4 text-sm font-semibold text-white transition-colors hover:bg-[#db4a2b]">
+                                    <Plus size={16} />
+                                    <span>Add New</span>
                                 </button>
                             )}
                         </div>
@@ -613,7 +680,7 @@ const AdminDashboard = () => {
                     {activeTab === 'overview' ? (
                         <OverviewSection stats={stats} />
                     ) : (activeTab === 'settings' || activeTab === 'floating-reel') ? (
-                        <div className="bg-white rounded-2xl shadow-[0_18px_55px_rgba(30,20,14,0.08)] border border-[#f0ded5] overflow-hidden p-6 md:p-8">
+                        <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-[0_18px_48px_rgba(15,23,42,0.06)]">
                             <div className="max-w-4xl mx-auto">
                                 <h2 className="text-2xl font-bold text-slate-900 mb-2 flex items-center gap-2">
                                     {activeTab === 'floating-reel' ? <Play size={28} className="text-[#df472b]" /> : <Settings size={28} className="text-[#df472b]" />}
@@ -689,6 +756,32 @@ const AdminDashboard = () => {
                                                         <option key={opt.v} value={opt.v}>{opt.l}</option>
                                                     ))}
                                                 </select>
+                                            ) : field.type === 'checkbox_group' ? (
+                                                <div className="flex flex-wrap gap-3">
+                                                    {field.options?.map(opt => {
+                                                        const currentValues = formData[field.name] || [];
+                                                        const isChecked = currentValues.includes(opt.v);
+                                                        return (
+                                                            <label key={opt.v} className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-colors ${isChecked ? 'bg-[#df472b]/10 border-[#df472b]/30' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'}`}>
+                                                                <input
+                                                                    type="checkbox"
+                                                                    className="hidden"
+                                                                    checked={isChecked}
+                                                                    onChange={(e) => {
+                                                                        const nextValues = e.target.checked 
+                                                                            ? [...currentValues, opt.v] 
+                                                                            : currentValues.filter(v => v !== opt.v);
+                                                                        setFormData({ ...formData, [field.name]: nextValues });
+                                                                    }}
+                                                                />
+                                                                <div className={`w-4 h-4 rounded border flex items-center justify-center ${isChecked ? 'bg-[#df472b] border-[#df472b]' : 'border-slate-300 bg-white'}`}>
+                                                                    {isChecked && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                                                                </div>
+                                                                <span className={`text-xs font-semibold ${isChecked ? 'text-[#df472b]' : 'text-slate-600'}`}>{opt.l}</span>
+                                                            </label>
+                                                        );
+                                                    })}
+                                                </div>
                                             ) : (
                                                 <input
                                                     type={field.type}
@@ -703,8 +796,8 @@ const AdminDashboard = () => {
                                     ))}
                                     
                                     <div className="col-span-1 md:col-span-2 flex justify-end gap-3 mt-8 pt-6 border-t border-slate-100">
-                                        <button type="button" onClick={() => fetchTabData()} className="h-11 md:h-12 px-6 md:px-8 rounded-xl font-bold text-sm text-slate-500 hover:bg-slate-200/50 transition-colors">Reset</button>
-                                        <button type="submit" className="h-11 md:h-12 px-8 md:px-10 bg-[#df472b] hover:bg-[#c63d23] text-white rounded-xl font-bold text-sm shadow-lg shadow-[#df472b]/30 flex items-center gap-2 transition-all" disabled={submitLoading}>
+                                        <button type="button" onClick={() => fetchTabData()} className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-800 transition-colors hover:border-[#db4a2b] hover:text-[#db4a2b]">Reset</button>
+                                        <button type="submit" className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-slate-950 px-6 text-sm font-semibold text-white transition-colors hover:bg-[#db4a2b]" disabled={submitLoading}>
                                             {submitLoading ? <Loader2 className="animate-spin" size={18} /> : <span>Save All Changes</span>}
                                         </button>
                                     </div>
@@ -713,7 +806,7 @@ const AdminDashboard = () => {
                             </div>
                         </div>
                     ) : (
-                        <div className="bg-white rounded-2xl shadow-[0_18px_55px_rgba(30,20,14,0.08)] border border-[#f0ded5] overflow-hidden">
+                        <div className="rounded-2xl border border-[#f0ded5] bg-white shadow-[0_18px_55px_rgba(30,20,14,0.08)] overflow-hidden">
                             <div className="overflow-x-auto relative z-10">
                                 <table className="w-full text-left whitespace-nowrap">
                                     <thead className="bg-slate-50/80 border-b border-slate-100">
@@ -743,6 +836,18 @@ const AdminDashboard = () => {
                                                 <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Role</th>
                                                 <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
                                                 <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Assigned RM</th>
+                                            </>}
+                                            {activeTab === 'admins' && <>
+                                                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Admin Name</th>
+                                                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Email/Phone</th>
+                                                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Role</th>
+                                                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
+                                            </>}
+                                            {activeTab === 'developers' && <>
+                                                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Developer Name</th>
+                                                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Contact Info</th>
+                                                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Location</th>
+                                                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
                                             </>}
                                             {activeTab === 'properties' && <>
                                                 <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Property</th>
@@ -890,6 +995,52 @@ const AdminDashboard = () => {
                                                         ) : <p className="text-xs font-medium text-slate-400 italic">System Account</p>}
                                                     </td>
                                                 </>}
+                                                {activeTab === 'admins' && <>
+                                                    <td className="px-6 py-4">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="w-10 h-10 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold text-sm">
+                                                                {item.name?.charAt(0) || 'A'}
+                                                            </div>
+                                                            <p className="font-bold text-slate-900 text-sm tracking-tight">{item.name || 'Anonymous'}</p>
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-6 py-4">
+                                                        <p className="text-xs text-slate-600 font-semibold">{item.email}</p>
+                                                        {item.phone && <p className="text-xs text-slate-500 mt-0.5">{item.phone}</p>}
+                                                    </td>
+                                                    <td className="px-6 py-4">
+                                                        <span className={`px-3 py-1 rounded-full font-bold text-[10px] uppercase tracking-wider ${item.role === 'SUPERADMIN' ? 'bg-purple-100 text-purple-700' : 'bg-slate-900 text-white'}`}>
+                                                            {item.role === 'SUPERADMIN' ? 'Superadmin' : 'Administrator'}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-6 py-4">
+                                                        <span className={`px-3 py-1 rounded-full font-bold text-[10px] uppercase tracking-wider ${item.isActive ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-400'}`}>
+                                                            {item.isActive ? 'Active' : 'Offline'}
+                                                        </span>
+                                                    </td>
+                                                </>}
+                                                {activeTab === 'developers' && <>
+                                                    <td className="px-6 py-4">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="w-10 h-10 rounded-lg bg-orange-100 text-orange-700 flex items-center justify-center font-bold text-sm">
+                                                                <Building2 size={18} />
+                                                            </div>
+                                                            <p className="font-bold text-slate-900 text-sm tracking-tight">{item.name || 'Anonymous'}</p>
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-6 py-4">
+                                                        <p className="text-xs text-slate-600 font-semibold">{item.email || 'No email'}</p>
+                                                        <p className="text-xs text-slate-500 mt-0.5">{item.phone || 'No phone'}</p>
+                                                    </td>
+                                                    <td className="px-6 py-4">
+                                                        <p className="text-xs text-slate-600 font-semibold">{item.city || 'Any'}</p>
+                                                    </td>
+                                                    <td className="px-6 py-4">
+                                                        <span className={`px-3 py-1 rounded-full font-bold text-[10px] uppercase tracking-wider ${item.isActive ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-400'}`}>
+                                                            {item.isActive ? 'Active' : 'Inactive'}
+                                                        </span>
+                                                    </td>
+                                                </>}
 
                                                 {activeTab === 'properties' && <>
                                                     <td className="px-6 py-4">
@@ -968,14 +1119,14 @@ const AdminDashboard = () => {
                                                 </>}
 
                                                 <td className="px-6 py-4 text-right">
-                                                    <div className="flex items-center justify-end gap-2 opacity-0 group-hover/row:opacity-100 transition-opacity">
+                                                    <div className="flex items-center justify-end gap-2">
                                                         {activeTab !== 'users' && activeTab !== 'leads' && (
-                                                            <button onClick={(e) => { e.stopPropagation(); handleEdit(item); }} className="w-8 h-8 rounded-lg bg-white border border-slate-200 text-slate-400 hover:text-[#df472b] hover:border-[#df472b]/30 hover:bg-[#df472b]/5 transition-all flex items-center justify-center">
+                                                            <button onClick={(e) => { e.stopPropagation(); handleEdit(item); }} className="w-8 h-8 rounded-full bg-slate-800 border-none text-slate-300 hover:text-white hover:bg-slate-700 transition-all flex items-center justify-center">
                                                                 <Edit size={14} />
                                                             </button>
                                                         )}
                                                         {activeTab !== 'users' && activeTab !== 'groups' && activeTab !== 'leads' && (
-                                                            <button onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }} className="w-8 h-8 rounded-lg bg-white border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-500/30 hover:bg-red-50 transition-all flex items-center justify-center">
+                                                            <button onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }} className="w-8 h-8 rounded-full bg-slate-800 border-none text-slate-300 hover:text-red-400 hover:bg-slate-700 transition-all flex items-center justify-center">
                                                                 <Trash2 size={14} />
                                                             </button>
                                                         )}
@@ -1031,41 +1182,42 @@ const AdminDashboard = () => {
 
             <AnimatePresence>
                 {showModal && (
-                    <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 md:p-6 bg-slate-900/60 backdrop-blur-sm">
+                    <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 md:p-6 bg-slate-900/40 backdrop-blur-sm">
                         <motion.div
-                            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                            initial={{ opacity: 0, scale: 0.95, y: 10 }}
                             animate={{ opacity: 1, scale: 1, y: 0 }}
-                            exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                            className="bg-white w-full max-w-3xl rounded-2xl shadow-2xl overflow-hidden relative max-h-[90vh] flex flex-col"
+                            exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                            transition={{ duration: 0.2 }}
+                            className="bg-white w-full max-w-3xl rounded-xl shadow-2xl overflow-hidden relative max-h-[90vh] flex flex-col border border-slate-200"
                         >
-                            <div className="p-6 md:p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                                <h3 className="text-xl font-black text-slate-900 tracking-tight">{editingItem ? 'Edit Record' : 'Add New Record'}</h3>
-                                <button onClick={() => setShowModal(false)} className="w-8 h-8 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-400 hover:text-slate-900 transition-colors shadow-sm"><X size={18} /></button>
+                            <div className="p-5 md:p-6 border-b border-slate-100 flex justify-between items-center bg-white">
+                                <h3 className="text-xl font-bold text-slate-950 tracking-tight">{editingItem ? 'Edit Record' : 'Add New Record'}</h3>
+                                <button onClick={() => setShowModal(false)} className="w-8 h-8 rounded-md bg-white border border-slate-200 flex items-center justify-center text-slate-400 hover:text-slate-950 transition-colors hover:bg-slate-50"><X size={16} /></button>
                             </div>
-                            <div className="p-6 md:p-8 overflow-y-auto custom-scrollbar flex-grow">
-                                <form id="modal-form" onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="p-5 md:p-6 overflow-y-auto custom-scrollbar flex-grow bg-slate-50/50">
+                                <form id="modal-form" onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-5">
                                     {getFormFields().map(field => (
-                                        <div key={field.name} className={`space-y-2 ${field.col || ''}`}>
-                                            <label className="text-xs font-bold text-slate-700">{field.label}</label>
+                                        <div key={field.name} className={`space-y-1.5 ${field.col || ''}`}>
+                                            <label className="text-xs font-semibold text-slate-700">{field.label}</label>
                                             
                                             {field.type === 'file' ? (
                                                 <input
                                                     type="file"
                                                     onChange={(e) => setFormData({ ...formData, [field.name]: e.target.files[0] })}
-                                                    className="w-full px-3 md:px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:bg-white focus:border-[#df472b] outline-none"
+                                                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-md text-sm font-medium focus:border-[#db4a2b] focus:ring-1 focus:ring-[#db4a2b] outline-none"
                                                 />
                                             ) : field.type === 'file_multiple' ? (
                                                 <input
                                                     type="file"
                                                     multiple
                                                     onChange={(e) => setFormData({ ...formData, [field.name]: Array.from(e.target.files) })}
-                                                    className="w-full px-3 md:px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:bg-white focus:border-[#df472b] outline-none"
+                                                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-md text-sm font-medium focus:border-[#db4a2b] focus:ring-1 focus:ring-[#db4a2b] outline-none"
                                                 />
                                             ) : field.type === 'textarea' ? (
                                                 <textarea
                                                     value={formData[field.name] || ''}
                                                     onChange={(e) => setFormData({ ...formData, [field.name]: e.target.value })}
-                                                    className="w-full min-h-[100px] p-3 md:p-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:bg-white focus:border-[#df472b] focus:ring-4 focus:ring-[#df472b]/10 outline-none transition-all resize-none"
+                                                    className="w-full min-h-[100px] p-3 bg-white border border-slate-200 rounded-md text-sm font-medium focus:border-[#db4a2b] focus:ring-1 focus:ring-[#db4a2b] outline-none resize-none"
                                                     placeholder={`Enter ${field.label}...`}
                                                     required
                                                 />
@@ -1073,7 +1225,7 @@ const AdminDashboard = () => {
                                                 <select
                                                     value={formData[field.name] || ''}
                                                     onChange={(e) => setFormData({ ...formData, [field.name]: field.options[0].v === true || field.options[0].v === false ? e.target.value === 'true' : e.target.value })}
-                                                    className="w-full h-11 md:h-12 px-3 md:px-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold focus:bg-white focus:border-[#df472b] focus:ring-4 focus:ring-[#df472b]/10 outline-none transition-all cursor-pointer"
+                                                    className="w-full h-10 px-3 bg-white border border-slate-200 rounded-md text-sm font-medium focus:border-[#db4a2b] focus:ring-1 focus:ring-[#db4a2b] outline-none cursor-pointer"
                                                     required
                                                 >
                                                     <option value="">Select Option</option>
@@ -1084,7 +1236,7 @@ const AdminDashboard = () => {
                                                     <select
                                                         value={formData[field.name] || ''}
                                                         onChange={(e) => setFormData({ ...formData, [field.name]: e.target.value })}
-                                                        className="flex-grow h-11 md:h-12 px-3 md:px-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold focus:bg-white focus:border-[#df472b] outline-none cursor-pointer"
+                                                        className="flex-grow h-10 px-3 bg-white border border-slate-200 rounded-md text-sm font-medium focus:border-[#db4a2b] focus:ring-1 focus:ring-[#db4a2b] outline-none cursor-pointer"
                                                         required
                                                     >
                                                         <option value="">Select Option</option>
@@ -1093,7 +1245,7 @@ const AdminDashboard = () => {
                                                     <button
                                                         type="button"
                                                         onClick={() => handleCreateSelectOption(field)}
-                                                        className="px-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl text-xs transition-colors whitespace-nowrap"
+                                                        className="px-3 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 font-semibold rounded-md text-xs transition-colors whitespace-nowrap"
                                                     >
                                                         Add New
                                                     </button>
@@ -1113,7 +1265,7 @@ const AdminDashboard = () => {
                                                                 [field.name]: raw ? Number(raw) * multiplier : ''
                                                             });
                                                         }}
-                                                        className="flex-grow h-11 md:h-12 px-3 md:px-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:bg-white focus:border-[#df472b] focus:ring-4 focus:ring-[#df472b]/10 outline-none transition-all"
+                                                        className="flex-grow h-10 px-3 bg-white border border-slate-200 rounded-md text-sm font-medium focus:border-[#db4a2b] focus:ring-1 focus:ring-[#db4a2b] outline-none"
                                                         placeholder={`Enter ${field.label}...`}
                                                         required
                                                     />
@@ -1128,30 +1280,76 @@ const AdminDashboard = () => {
                                                                 [field.name]: raw ? Number(raw) * multiplier : ''
                                                             });
                                                         }}
-                                                        className="w-24 h-11 md:h-12 px-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold focus:bg-white focus:border-[#df472b] focus:ring-4 focus:ring-[#df472b]/10 outline-none cursor-pointer"
+                                                        className="w-24 h-10 px-2 bg-white border border-slate-200 rounded-md text-sm font-medium focus:border-[#db4a2b] focus:ring-1 focus:ring-[#db4a2b] outline-none cursor-pointer"
                                                     >
                                                         <option value={1}>₹</option>
                                                         <option value={100000}>Lakhs</option>
                                                         <option value={10000000}>Cr</option>
                                                     </select>
                                                 </div>
+                                            ) : field.type === 'checkbox_group' ? (
+                                                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                                    {field.options.map((opt) => {
+                                                        const isChecked = (formData[field.name] || []).includes(opt.v);
+                                                        return (
+                                                            <label key={opt.v} className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer border transition-colors ${isChecked ? 'border-[#db4a2b] bg-[#db4a2b]/5' : 'border-slate-200 bg-white hover:bg-slate-50'}`}>
+                                                                <input
+                                                                    type="checkbox"
+                                                                    className="w-4 h-4 text-[#db4a2b] bg-white border-slate-300 rounded focus:ring-[#db4a2b] focus:ring-2 cursor-pointer"
+                                                                    checked={isChecked}
+                                                                    onChange={(e) => {
+                                                                        const current = formData[field.name] || [];
+                                                                        if (e.target.checked) {
+                                                                            setFormData({ ...formData, [field.name]: [...current, opt.v] });
+                                                                        } else {
+                                                                            setFormData({ ...formData, [field.name]: current.filter(c => c !== opt.v) });
+                                                                        }
+                                                                    }}
+                                                                />
+                                                                <span className="text-sm font-semibold text-slate-700">{opt.l}</span>
+                                                            </label>
+                                                        )
+                                                    })}
+                                                </div>
+                                            ) : field.type === 'select' ? (
+                                                <select
+                                                    value={formData[field.name] !== undefined ? formData[field.name] : ''}
+                                                    onChange={(e) => {
+                                                        const val = e.target.value;
+                                                        setFormData({ ...formData, [field.name]: val === 'true' ? true : val === 'false' ? false : val });
+                                                    }}
+                                                    className="w-full h-10 px-3 bg-white border border-slate-200 rounded-md text-sm font-medium focus:border-[#db4a2b] focus:ring-1 focus:ring-[#db4a2b] outline-none cursor-pointer"
+                                                >
+                                                    <option value="" disabled>Select {field.label}</option>
+                                                    {field.options.map(opt => (
+                                                        <option key={opt.v} value={opt.v}>{opt.l}</option>
+                                                    ))}
+                                                </select>
+                                            ) : field.type === 'textarea' ? (
+                                                <textarea
+                                                    value={formData[field.name] || ''}
+                                                    onChange={(e) => setFormData({ ...formData, [field.name]: e.target.value })}
+                                                    className="w-full min-h-[100px] p-3 bg-white border border-slate-200 rounded-md text-sm font-medium focus:border-[#db4a2b] focus:ring-1 focus:ring-[#db4a2b] outline-none transition-all resize-none"
+                                                    placeholder={`Enter ${field.label}...`}
+                                                    disabled={field.disabled}
+                                                />
                                             ) : (
                                                 field.type === 'datetime-local' ? (
                                                     <input
                                                         type="datetime-local"
                                                         value={formData[field.name] ? new Date(formData[field.name]).toISOString().slice(0, 16) : ''}
                                                         onChange={(e) => setFormData({ ...formData, [field.name]: e.target.value ? new Date(e.target.value) : null })}
-                                                        className="w-full h-11 md:h-12 px-3 md:px-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:bg-white focus:border-[#df472b] focus:ring-4 focus:ring-[#df472b]/10 outline-none transition-all"
+                                                        className="w-full h-10 px-3 bg-white border border-slate-200 rounded-md text-sm font-medium focus:border-[#db4a2b] focus:ring-1 focus:ring-[#db4a2b] outline-none"
                                                     />
                                                 ) : (
                                                     <input
                                                         type={field.type}
                                                         value={formData[field.name] || ''}
                                                         onChange={(e) => setFormData({ ...formData, [field.name]: e.target.value })}
-                                                        className="w-full h-11 md:h-12 px-3 md:px-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:bg-white focus:border-[#df472b] focus:ring-4 focus:ring-[#df472b]/10 outline-none transition-all disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
+                                                        className="w-full h-10 px-3 bg-white border border-slate-200 rounded-md text-sm font-medium focus:border-[#db4a2b] focus:ring-1 focus:ring-[#db4a2b] outline-none disabled:bg-slate-50 disabled:text-slate-400"
                                                         placeholder={`Enter ${field.label}...`}
                                                         disabled={field.disabled}
-                                                        required
+                                                        required={field.type !== 'checkbox'}
                                                     />
                                                 )
                                             )}
@@ -1159,10 +1357,10 @@ const AdminDashboard = () => {
                                     ))}
                                 </form>
                             </div>
-                            <div className="p-6 md:p-8 bg-slate-50/50 flex justify-end gap-3 border-t border-slate-100">
-                                <button type="button" onClick={() => setShowModal(false)} className="h-11 md:h-12 px-6 md:px-8 rounded-xl font-bold text-sm text-slate-500 hover:bg-slate-200/50 transition-colors">Cancel</button>
-                                <button type="submit" form="modal-form" className="h-11 md:h-12 px-8 md:px-10 bg-[#df472b] hover:bg-[#c63d23] text-white rounded-xl font-bold text-sm shadow-lg shadow-[#df472b]/30 flex items-center gap-2 transition-all" disabled={submitLoading}>
-                                    {submitLoading ? <Loader2 className="animate-spin" size={18} /> : <span>{editingItem ? 'Save Changes' : 'Create Record'}</span>}
+                            <div className="p-5 md:p-6 bg-white flex justify-end gap-3 border-t border-slate-100">
+                                <button type="button" onClick={() => setShowModal(false)} className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-800 transition-colors hover:bg-slate-50 hover:text-slate-900">Cancel</button>
+                                <button type="submit" form="modal-form" className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-slate-950 px-6 text-sm font-semibold text-white transition-colors hover:bg-[#db4a2b]" disabled={submitLoading}>
+                                    {submitLoading ? <Loader2 className="animate-spin" size={16} /> : <span>{editingItem ? 'Save Changes' : 'Create Record'}</span>}
                                 </button>
                             </div>
                         </motion.div>
@@ -1179,34 +1377,34 @@ const OverviewSection = ({ stats }) => {
         <div className="space-y-6 md:space-y-8">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
                 {[
-                    { label: 'Total Users', value: stats.totalUsers || 0, icon: Users, color: 'text-[#2563eb]', bg: 'bg-[#eff6ff]', border: 'border-[#bfdbfe]' },
-                    { label: 'Active Groups', value: stats.activeGroups || 0, icon: Handshake, color: 'text-[#16a34a]', bg: 'bg-[#ecfdf3]', border: 'border-[#bbf7d0]' },
-                    { label: 'Total Properties', value: stats.totalProperties || 0, icon: Building2, color: 'text-[#df472b]', bg: 'bg-[#fff4ef]', border: 'border-[#ffd3c2]' },
-                    { label: 'Total Leads', value: stats.totalLeads || 0, icon: MessageSquare, color: 'text-[#7c3aed]', bg: 'bg-[#f5f3ff]', border: 'border-[#ddd6fe]' }
+                    { label: 'Total Users', value: stats.totalUsers || 0, icon: Users, color: 'text-slate-900', bg: 'bg-slate-100' },
+                    { label: 'Active Groups', value: stats.activeGroups || 0, icon: Handshake, color: 'text-slate-900', bg: 'bg-slate-100' },
+                    { label: 'Total Properties', value: stats.totalProperties || 0, icon: Building2, color: 'text-[#db4a2b]', bg: 'bg-[#fff2ed]' },
+                    { label: 'Total Leads', value: stats.totalLeads || 0, icon: MessageSquare, color: 'text-slate-900', bg: 'bg-slate-100' }
                 ].map((stat, idx) => (
                     <motion.div
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: idx * 0.1 }}
                         key={idx}
-                        className={`p-5 md:p-6 rounded-2xl border ${stat.border} bg-white shadow-[0_18px_45px_rgba(30,20,14,0.06)] flex flex-col`}
+                        className="rounded-lg border border-slate-200 bg-white p-5 shadow-[0_18px_48px_rgba(15,23,42,0.06)] flex flex-col"
                     >
-                        <div className={`w-12 h-12 rounded-xl ${stat.bg} ${stat.color} flex items-center justify-center mb-5`}>
-                            <stat.icon size={24} />
+                        <div className={`w-10 h-10 rounded-md ${stat.bg} ${stat.color} flex items-center justify-center mb-4`}>
+                            <stat.icon size={20} />
                         </div>
-                        <h3 className="text-3xl md:text-4xl font-black text-slate-900 tracking-tight">{stat.value}</h3>
-                        <p className="text-slate-500 font-semibold text-xs uppercase tracking-wider mt-2">{stat.label}</p>
+                        <h3 className="text-3xl font-bold text-slate-950 tracking-tight">{stat.value}</h3>
+                        <p className="text-slate-500 font-semibold text-[11px] uppercase tracking-wider mt-2">{stat.label}</p>
                     </motion.div>
                 ))}
             </div>
 
-            <div className="bg-white rounded-2xl p-5 md:p-7 shadow-[0_18px_55px_rgba(30,20,14,0.07)] border border-[#f0ded5]">
+            <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-[0_18px_48px_rgba(15,23,42,0.06)]">
                 <div className="flex items-center justify-between gap-4 mb-6">
                     <div>
-                        <p className="text-[#df472b] text-[10px] font-black uppercase tracking-[0.22em] mb-1">Live Activity</p>
-                        <h3 className="text-lg md:text-xl font-bold text-slate-900 tracking-tight">Recent Platform Activity</h3>
+                        <h3 className="text-lg font-bold text-slate-950 tracking-tight">Recent Platform Activity</h3>
+                        <p className="text-sm text-slate-500 mt-1">Latest leads and events in the system.</p>
                     </div>
-                    <div className="hidden sm:flex h-10 w-10 items-center justify-center rounded-xl bg-[#121212] text-white">
+                    <div className="hidden sm:flex h-10 w-10 items-center justify-center rounded-md bg-slate-50 text-slate-400 border border-slate-200">
                         <BarChart3 size={18} />
                     </div>
                 </div>
@@ -1215,19 +1413,19 @@ const OverviewSection = ({ stats }) => {
                         <p className="text-slate-500 text-sm italic">No recent activity found.</p>
                     ) : (
                         stats.recentLeads.map((lead, i) => (
-                            <div key={i} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 md:p-5 bg-[#fff8f3] rounded-xl border border-[#f1ded4] gap-4">
+                            <div key={i} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-slate-50 rounded-md border border-slate-200 gap-4">
                                 <div className="flex items-center gap-4">
-                                    <div className="w-10 h-10 rounded-full bg-white shadow-sm text-[#df472b] flex items-center justify-center font-bold text-sm border border-[#ffd3c2]">
+                                    <div className="w-10 h-10 rounded-full bg-white shadow-sm text-slate-700 flex items-center justify-center font-bold text-sm border border-slate-200">
                                         {(lead.name || 'L').charAt(0)}
                                     </div>
                                     <div>
-                                        <p className="font-bold text-slate-900 text-sm">{lead.name}</p>
+                                        <p className="font-bold text-slate-950 text-sm">{lead.name}</p>
                                         <p className="text-xs text-slate-500">{lead.email} • {lead.city || 'Any Location'}</p>
                                     </div>
                                 </div>
                                 <div className="sm:text-right">
-                                    <span className="inline-block px-3 py-1 bg-green-100 text-green-700 font-bold text-[10px] uppercase tracking-wider rounded-full">New Lead</span>
-                                    <p className="text-[10px] font-semibold text-slate-400 mt-1">{format(new Date(lead.createdAt || new Date()), 'dd MMM yyyy, hh:mm a')}</p>
+                                    <span className="inline-block px-2.5 py-1 bg-white border border-slate-200 text-slate-700 font-bold text-[10px] uppercase tracking-wider rounded-md">New Lead</span>
+                                    <p className="text-[11px] font-medium text-slate-400 mt-1.5">{format(new Date(lead.createdAt || new Date()), 'dd MMM yyyy, hh:mm a')}</p>
                                 </div>
                             </div>
                         ))

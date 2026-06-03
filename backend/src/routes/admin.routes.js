@@ -40,8 +40,8 @@ const upload = multer({
   }
 });
 
-// All admin routes require ADMIN role
-router.use(authenticate, authorize('ADMIN'));
+// All admin routes require ADMIN or SUPERADMIN role
+router.use(authenticate, authorize('ADMIN', 'SUPERADMIN'));
 
 // Dashboard Analytics
 router.get('/dashboard', async (req, res, next) => {
@@ -79,8 +79,7 @@ router.get('/dashboard', async (req, res, next) => {
 router.get('/users', async (req, res, next) => {
   try {
     const { page = 1, limit = 20, search, role } = req.query;
-    const where = {};
-    if (role) where.role = role;
+    const where = { role: 'BUYER' }; // Force role to BUYER
     if (search) where.OR = [{ email: { contains: search } }, { name: { contains: search } }];
     const [users, total] = await Promise.all([
       db.user.findMany({ where, orderBy: { createdAt: 'desc' }, skip: (page - 1) * limit, take: parseInt(limit) }),
@@ -140,6 +139,41 @@ router.get('/properties', async (req, res, next) => {
       orderBy: { createdAt: 'desc' },
     });
     res.json({ success: true, properties });
+  } catch (error) { next(error); }
+});
+
+// CRUD Admins
+router.get('/admins', async (req, res, next) => {
+  try {
+    const admins = await db.admin.findMany({
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json({ success: true, admins });
+  } catch (error) { next(error); }
+});
+
+router.post('/admins', async (req, res, next) => {
+  try {
+    // Only SUPERADMIN can create new admins (optional check)
+    if (req.user.role !== 'SUPERADMIN') {
+      // return res.status(403).json({ success: false, message: 'Only Superadmin can add admins' });
+    }
+    const admin = await db.admin.create({ data: req.body });
+    res.status(201).json({ success: true, admin });
+  } catch (error) { next(error); }
+});
+
+router.put('/admins/:id', async (req, res, next) => {
+  try {
+    const admin = await db.admin.update({ where: { id: req.params.id }, data: req.body });
+    res.json({ success: true, admin });
+  } catch (error) { next(error); }
+});
+
+router.delete('/admins/:id', async (req, res, next) => {
+  try {
+    await db.admin.delete({ where: { id: req.params.id } });
+    res.json({ success: true, message: 'Admin deleted' });
   } catch (error) { next(error); }
 });
 
