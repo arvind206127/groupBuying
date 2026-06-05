@@ -14,6 +14,45 @@ import {
 } from 'lucide-react';
 
 const sortByName = (records = []) => [...records].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+const FALLBACK_PROPERTY_IMAGE = 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?auto=format&fit=crop&q=80&w=400';
+const API_ORIGIN = (api.defaults.baseURL || '').replace(/\/api\/?$/, '');
+
+const getAdminImageUrl = (value) => {
+    if (!value) return '';
+    if (/^(https?:\/\/|data:image\/|blob:)/i.test(value)) return value;
+    if (value.startsWith('/')) return `${API_ORIGIN}${value}`;
+    if (value.startsWith('uploads/')) return `${API_ORIGIN}/${value}`;
+    return value;
+};
+
+const getPropertyPreviewImage = (property) => getAdminImageUrl(
+    property?.thumbnailUrl
+    || property?.image
+    || property?.imageUrl
+    || property?.images?.[0]?.url
+    || property?.images?.[0]
+);
+
+const getSavedGalleryImages = (value) => {
+    const normalize = (item) => {
+        if (!item) return '';
+        if (typeof item === 'string') return getAdminImageUrl(item.trim());
+        return getAdminImageUrl(item.url || item.imageUrl || item.src || item.path || '');
+    };
+
+    if (Array.isArray(value)) {
+        return value.map(normalize).filter(Boolean);
+    }
+
+    if (typeof value === 'string') {
+        return value
+            .split('\n')
+            .map(normalize)
+            .filter(Boolean);
+    }
+
+    return [];
+};
 
 const HERO_DEFAULTS = {
   heroBgColor: '#f66f52',
@@ -40,6 +79,456 @@ const HERO_DEFAULTS = {
   floatingReelDesc: 'See how to save 25L+ today.',
   floatingReelVideo: 'https://v.ftcdn.net/08/42/97/34/700_F_842973413_jI8aW7D06v9aYx0h9W0vW5qY9v9q9v9q_ST.mp4',
   floatingReelThumbnail: '',
+};
+
+const PROPERTY_DISPLAY_SECTIONS = [
+  { v: '', l: 'None' },
+  { v: 'FAST_SELLING', l: 'Fast Selling Properties' },
+  { v: 'TRENDING', l: 'Trending Properties' },
+  { v: 'PRE_LAUNCH', l: 'Pre-Launch Properties' },
+  { v: 'FEATURED_COMMERCIAL', l: 'Featured Commercial Properties' },
+  { v: 'PROMINSHES_AND_PLOTS', l: 'Promising Plots & Villas' },
+];
+
+const PROPERTY_CATEGORIES = [
+  { v: 'Residential', l: 'Residential' },
+  { v: 'Commercial', l: 'Commercial' },
+  { v: 'Plots', l: 'Plots' },
+  { v: 'Villa', l: 'Villa' },
+];
+
+const BHK_CONFIG_OPTIONS = [1, 2, 3, 4, 5, 6].map((value) => ({ value, label: `${value} BHK` }));
+const PRICE_UNIT_OPTIONS = [
+    { value: 10000000, label: 'Cr' },
+    { value: 100000, label: 'Lakh' },
+];
+
+const POSSESSION_STATUSES = [
+  { v: 'Under Construction', l: 'Under Construction' },
+  { v: 'Ready to Sale', l: 'Ready to Sale' },
+  { v: 'Ready to Move', l: 'Ready to Move' },
+  { v: 'Pre-Launch', l: 'Pre-Launch' },
+  { v: 'Sold Out', l: 'Sold Out' },
+];
+
+const arrayToTextarea = (value) => Array.isArray(value) ? value.join('\n') : (value || '');
+
+const floorPlansToTextarea = (value) => Array.isArray(value)
+  ? value.map((plan) => [plan.label, plan.price, plan.area, plan.imageUrl, plan.priceTo].filter(Boolean).join(' | ')).join('\n')
+  : (value || '');
+
+const nearbyPlacesToTextarea = (value) => Array.isArray(value)
+  ? value.map((place) => [place.category, place.name, place.address, place.distance, place.time].filter(Boolean).join(' | ')).join('\n')
+  : (value || '');
+
+const toDateInputValue = (value) => {
+    if (!value) return '';
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value).slice(0, 10);
+    return date.toISOString().slice(0, 10);
+};
+
+const getBhkFromLabel = (label = '') => {
+    const match = String(label).match(/\d+/);
+    return match ? Number(match[0]) : null;
+};
+
+const looksLikeImageUrl = (value = '') => /^(https?:\/\/|\/|uploads\/|data:image\/|blob:)/i.test(String(value).trim())
+    || /\.(png|jpe?g|webp|gif|svg)(\?.*)?$/i.test(String(value).trim());
+
+const looksLikeArea = (value = '') => /(sq\.?\s*ft|sqft|square\s*feet|acre|acres|sq\.?\s*m|sqm|yard|yd)/i.test(String(value).trim());
+
+const parsePlanPrice = (value) => {
+    if (value === undefined || value === null || value === '') return null;
+    const text = String(value).replace(/,/g, '').trim();
+    const match = text.match(/[\d.]+/);
+    if (!match) return null;
+    let number = Number(match[0]);
+    if (!Number.isFinite(number)) return null;
+    if (/cr|crore/i.test(text)) number *= 10000000;
+    if (/lac|lakh/i.test(text)) number *= 100000;
+    return number;
+};
+
+const parsePlanAreaNumber = (value) => {
+    const match = String(value || '').replace(/,/g, '').match(/[\d.]+/);
+    const number = match ? Number(match[0]) : null;
+    return Number.isFinite(number) ? number : null;
+};
+
+const getPlanPriceUnit = (row, field) => {
+    const storedUnit = Number(row?.[`${field}Unit`]);
+    if (storedUnit) return storedUnit;
+
+    const text = String(row?.[field] || '');
+    if (/lac|lakh/i.test(text)) return 100000;
+    if (/cr|crore/i.test(text)) return 10000000;
+
+    const price = parsePlanPrice(row?.[field]);
+    return price && price < 10000000 ? 100000 : 10000000;
+};
+
+const getPlanPriceRaw = (row, field) => {
+    const price = parsePlanPrice(row?.[field]);
+    if (!Number.isFinite(price) || price <= 0) return '';
+
+    const unit = getPlanPriceUnit(row, field);
+    return Number((price / unit).toFixed(3));
+};
+
+const formatPlanPriceInput = (raw, unit) => {
+    if (raw === undefined || raw === null || raw === '') return '';
+    return `${raw} ${unit === 10000000 ? 'Cr' : 'Lakh'}`;
+};
+
+const buildPriceFormParts = (value) => {
+    const number = Number(value);
+    if (!Number.isFinite(number) || number <= 0) return {};
+    if (number >= 10000000) return { price_raw: number / 10000000, price_unit: 10000000 };
+    if (number >= 100000) return { price_raw: number / 100000, price_unit: 100000 };
+    return { price_raw: number, price_unit: 1 };
+};
+
+const parseBhkPlanRows = (value) => {
+    const source = Array.isArray(value)
+        ? value
+        : String(value || '').split('\n').map((line) => line.trim()).filter(Boolean);
+
+    return source.map((item) => {
+        if (typeof item === 'object' && item !== null) {
+            const label = item.label || item.title || item.name || item.configuration || (item.bhk ? `${item.bhk} BHK` : '');
+            const bhk = Number(item.bhk) || getBhkFromLabel(label);
+            return {
+                bhk,
+                label: label || (bhk ? `${bhk} BHK` : 'BHK Plan'),
+                price: item.price || item.minPrice || item.priceFrom || '',
+                priceTo: item.priceTo || item.maxPrice || item.priceTill || '',
+                area: item.area || item.superArea || item.carpetArea || item.size || '',
+                imageUrl: item.imageUrl || item.url || item.src || item.image || item.blueprintImage || item.blueprintUrl || item.planImage || item.planUrl || '',
+            };
+        }
+
+        const [labelPart = '', ...parts] = String(item).split('|').map((part) => part.trim());
+        const [first = '', second = '', third = '', fourth = ''] = parts;
+        let price = first;
+        let area = second;
+        let imageUrl = third;
+        let priceTo = fourth;
+
+        if (looksLikeImageUrl(first)) {
+            imageUrl = first;
+            area = second;
+            price = third;
+            priceTo = fourth;
+        } else if (looksLikeArea(first)) {
+            area = first;
+            price = second;
+            imageUrl = third;
+            priceTo = fourth;
+        }
+
+        if (!looksLikeImageUrl(imageUrl)) {
+            const detectedImageUrl = parts.find(looksLikeImageUrl);
+            if (detectedImageUrl) imageUrl = detectedImageUrl;
+        }
+
+        const bhk = getBhkFromLabel(labelPart);
+        return {
+            bhk,
+            label: labelPart || (bhk ? `${bhk} BHK` : 'BHK Plan'),
+            price,
+            priceTo,
+            area,
+            imageUrl,
+        };
+    }).filter((row) => row.bhk || row.label || row.price || row.area || row.imageUrl);
+};
+
+const serializeBhkPlanRows = (rows) => rows
+    .filter((row) => row.bhk || row.label || row.price || row.area || row.imageUrl)
+    .sort((a, b) => (Number(a.bhk) || 99) - (Number(b.bhk) || 99))
+    .map((row) => [
+        row.label || (row.bhk ? `${row.bhk} BHK` : 'BHK Plan'),
+        row.price || '',
+        row.area || '',
+        row.imageUrl || '',
+        row.priceTo || '',
+    ].filter(Boolean).join(' | '))
+    .join('\n');
+
+const getBhkPlanMeta = (rows) => {
+    const activeRows = rows.filter((row) => row.bhk || row.price || row.area || row.imageUrl);
+    const bhks = activeRows.map((row) => Number(row.bhk)).filter((value) => Number.isFinite(value));
+    const prices = activeRows.flatMap((row) => [parsePlanPrice(row.price), parsePlanPrice(row.priceTo)]).filter((value) => Number.isFinite(value));
+    const primaryRow = activeRows.sort((a, b) => (Number(a.bhk) || 99) - (Number(b.bhk) || 99))[0];
+
+    return {
+        text: serializeBhkPlanRows(activeRows),
+        primaryBhk: bhks.length ? Math.min(...bhks) : '',
+        minPrice: prices.length ? Math.min(...prices) : '',
+        primaryArea: parsePlanAreaNumber(primaryRow?.area) || '',
+    };
+};
+
+const PlanPriceInput = ({ label, row, field, onChange, placeholder = '0.00' }) => {
+    const unit = getPlanPriceUnit(row, field);
+    const rawValue = getPlanPriceRaw(row, field);
+
+    const updatePrice = (raw, nextUnit = unit) => {
+        onChange({
+            [field]: formatPlanPriceInput(raw, nextUnit),
+            [`${field}Unit`]: nextUnit,
+        });
+    };
+
+    return (
+        <div>
+            <label className="text-[11px] font-semibold text-slate-500">{label}</label>
+            <div className="mt-1 flex overflow-hidden rounded-md border border-slate-200 bg-white focus-within:border-[#db4a2b]">
+                <input
+                    type="number"
+                    step="any"
+                    value={rawValue}
+                    onChange={(event) => updatePrice(event.target.value)}
+                    className="h-10 min-w-0 flex-1 px-3 text-sm font-semibold outline-none"
+                    placeholder={placeholder}
+                />
+                <select
+                    value={unit}
+                    onChange={(event) => updatePrice(rawValue, Number(event.target.value))}
+                    className="h-10 w-20 border-l border-slate-200 bg-slate-50 px-2 text-xs font-bold text-slate-700 outline-none"
+                >
+                    {PRICE_UNIT_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                </select>
+            </div>
+        </div>
+    );
+};
+
+const BhkPlansBuilder = ({ value, files = {}, onChange, onFileChange }) => {
+    const rows = parseBhkPlanRows(value);
+    const selectedBhks = new Set(rows.map((row) => row.bhk).filter(Boolean));
+
+    const updateRows = (nextRows) => onChange(getBhkPlanMeta(nextRows));
+
+    const toggleBhk = (bhk) => {
+        if (selectedBhks.has(bhk)) {
+            updateRows(rows.filter((row) => row.bhk !== bhk));
+            return;
+        }
+        updateRows([...rows, { bhk, label: `${bhk} BHK`, price: '', priceTo: '', area: '', imageUrl: '' }]);
+    };
+
+    const updateRow = (bhk, patch) => {
+        updateRows(rows.map((row) => row.bhk === bhk ? { ...row, ...patch } : row));
+    };
+
+    const selectedRows = BHK_CONFIG_OPTIONS
+        .filter((option) => selectedBhks.has(option.value))
+        .map((option) => rows.find((row) => row.bhk === option.value) || { bhk: option.value, label: option.label });
+
+    return (
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <div className="flex flex-wrap gap-2">
+                {BHK_CONFIG_OPTIONS.map((option) => {
+                    const selected = selectedBhks.has(option.value);
+                    return (
+                        <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => toggleBhk(option.value)}
+                            className={`rounded-full border px-4 py-2 text-xs font-bold transition ${
+                                selected
+                                    ? 'border-[#db4a2b] bg-[#db4a2b] text-white shadow-sm'
+                                    : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-[#db4a2b]/40 hover:bg-[#db4a2b]/5'
+                            }`}
+                        >
+                            {option.label}
+                        </button>
+                    );
+                })}
+            </div>
+
+            {selectedRows.length ? (
+                <div className="mt-4 space-y-3">
+                    {selectedRows.map((row) => (
+                        <div key={row.bhk} className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 md:grid-cols-5">
+                            <div>
+                                <label className="text-[11px] font-semibold text-slate-500">Config</label>
+                                <input
+                                    value={row.label || `${row.bhk} BHK`}
+                                    onChange={(event) => updateRow(row.bhk, { label: event.target.value })}
+                                    className="mt-1 h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold outline-none focus:border-[#db4a2b]"
+                                />
+                            </div>
+                            <PlanPriceInput
+                                label="Price From"
+                                row={row}
+                                field="price"
+                                onChange={(patch) => updateRow(row.bhk, patch)}
+                                placeholder="1.23"
+                            />
+                            <PlanPriceInput
+                                label="Price To"
+                                row={row}
+                                field="priceTo"
+                                onChange={(patch) => updateRow(row.bhk, patch)}
+                                placeholder="Optional"
+                            />
+                            <div>
+                                <label className="text-[11px] font-semibold text-slate-500">Area</label>
+                                <input
+                                    value={row.area || ''}
+                                    onChange={(event) => updateRow(row.bhk, { area: event.target.value })}
+                                    className="mt-1 h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold outline-none focus:border-[#db4a2b]"
+                                    placeholder="1250 sq.ft."
+                                />
+                            </div>
+                            <div>
+                                <label className="text-[11px] font-semibold text-slate-500">Blueprint Image</label>
+                                <input
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={(event) => onFileChange?.(row.bhk, event.target.files?.[0] || null)}
+                                    className="mt-1 h-10 w-full rounded-md border border-slate-200 bg-white px-2 py-2 text-xs font-semibold outline-none focus:border-[#db4a2b]"
+                                />
+                                <p className="mt-1 truncate text-[10px] font-semibold text-slate-500">
+                                    {files[row.bhk]?.name || (row.imageUrl ? 'Current image saved' : 'No image selected')}
+                                </p>
+                                {row.imageUrl ? (
+                                    <img
+                                        src={getAdminImageUrl(row.imageUrl)}
+                                        alt={`${row.label || row.bhk} blueprint preview`}
+                                        className="mt-2 h-14 w-full rounded-md border border-slate-200 object-cover"
+                                        onError={(event) => {
+                                            event.currentTarget.style.display = 'none';
+                                        }}
+                                    />
+                                ) : null}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            ) : (
+                <p className="mt-4 rounded-lg bg-slate-50 px-3 py-3 text-xs font-semibold text-slate-500">
+                    Select one or more BHK options, then add each BHK price, area, and blueprint URL.
+                </p>
+            )}
+        </div>
+    );
+};
+
+const GalleryFilePicker = ({ field, formData, setFormData }) => {
+    const selectedFiles = Array.isArray(formData[field.name]) ? formData[field.name] : [];
+    const savedImages = field.name === 'imagesFileList' ? getSavedGalleryImages(formData.images) : [];
+    const removeSavedImage = (removeIndex) => {
+        setFormData((previous) => {
+            const currentImages = getSavedGalleryImages(previous.images);
+            return {
+                ...previous,
+                images: currentImages.filter((_, imageIndex) => imageIndex !== removeIndex).join('\n'),
+            };
+        });
+    };
+    const removeSelectedFile = (removeIndex) => {
+        setFormData((previous) => {
+            const currentFiles = Array.isArray(previous[field.name]) ? previous[field.name] : [];
+            return {
+                ...previous,
+                [field.name]: currentFiles.filter((_, fileIndex) => fileIndex !== removeIndex),
+            };
+        });
+    };
+
+    return (
+        <div className="rounded-xl border-2 border-dashed border-[#db4a2b]/30 bg-[#fff7f4] p-4">
+            <input
+                id={`field-${field.name}`}
+                type="file"
+                multiple
+                accept="image/*"
+                onChange={(event) => {
+                    const pickedFiles = Array.from(event.target.files || []);
+                    setFormData((previous) => {
+                        const currentFiles = Array.isArray(previous[field.name]) ? previous[field.name] : [];
+                        return {
+                            ...previous,
+                            [field.name]: [...currentFiles, ...pickedFiles],
+                        };
+                    });
+                    event.target.value = '';
+                }}
+                className="hidden"
+            />
+            <label
+                htmlFor={`field-${field.name}`}
+                className="flex cursor-pointer flex-col items-center justify-center rounded-lg bg-white px-4 py-6 text-center shadow-sm transition hover:bg-[#fff0ea]"
+            >
+                <span className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-[#db4a2b] text-white">
+                    <Plus size={20} />
+                </span>
+                <span className="mt-3 text-sm font-bold text-slate-900">Choose Multiple Gallery Images</span>
+                <span className="mt-1 text-xs font-semibold text-slate-500">You can select many images together. URL not needed.</span>
+            </label>
+
+            {savedImages.length > 0 ? (
+                <div className="mt-3 rounded-lg bg-white p-3 text-xs font-semibold text-slate-600">
+                    <p>Already saved images ({savedImages.length})</p>
+                    <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-5 md:grid-cols-6">
+                        {savedImages.map((imageUrl, imageIndex) => (
+                            <div key={`${imageUrl}-${imageIndex}`} className="relative overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+                                <button
+                                    type="button"
+                                    onClick={() => removeSavedImage(imageIndex)}
+                                    aria-label={`Remove saved gallery image ${imageIndex + 1}`}
+                                    className="absolute right-1 top-1 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-white text-[#db4a2b] shadow-md transition hover:bg-[#db4a2b] hover:text-white"
+                                >
+                                    <X size={13} strokeWidth={3} />
+                                </button>
+                                <img
+                                    src={imageUrl}
+                                    alt={`Saved gallery ${imageIndex + 1}`}
+                                    className="h-20 w-full object-cover"
+                                    onError={(event) => {
+                                        event.currentTarget.style.display = 'none';
+                                    }}
+                                />
+                                <p className="truncate px-2 py-1 text-[10px] text-slate-500">Saved image {imageIndex + 1}</p>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            ) : null}
+
+            {selectedFiles.length > 0 ? (
+                <div className="mt-3 rounded-lg bg-white p-3 text-xs font-semibold text-slate-600">
+                    <p>New selected images ({selectedFiles.length})</p>
+                    <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-5 md:grid-cols-6">
+                        {selectedFiles.map((file, fileIndex) => (
+                            <div key={`${file.name}-${fileIndex}`} className="relative overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+                                <button
+                                    type="button"
+                                    onClick={() => removeSelectedFile(fileIndex)}
+                                    aria-label={`Remove selected gallery image ${fileIndex + 1}`}
+                                    className="absolute right-1 top-1 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-white text-[#db4a2b] shadow-md transition hover:bg-[#db4a2b] hover:text-white"
+                                >
+                                    <X size={13} strokeWidth={3} />
+                                </button>
+                                <img
+                                    src={URL.createObjectURL(file)}
+                                    alt={file.name}
+                                    className="h-20 w-full object-cover"
+                                />
+                                <p className="truncate px-2 py-1 text-[10px] text-slate-500">{file.name}</p>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            ) : null}
+        </div>
+    );
 };
 
 const AdminDashboard = () => {
@@ -219,6 +708,12 @@ const AdminDashboard = () => {
             }
         });
 
+        ['amenities', 'highlights', 'specifications', 'images'].forEach(field => {
+            processedFormData[field] = arrayToTextarea(processedFormData[field]);
+        });
+        processedFormData.floorPlans = floorPlansToTextarea(processedFormData.floorPlans);
+        processedFormData.nearbyPlaces = nearbyPlacesToTextarea(processedFormData.nearbyPlaces);
+
         setEditingItem(item);
         setFormData(processedFormData);
         setShowModal(true);
@@ -327,6 +822,12 @@ const AdminDashboard = () => {
                     const url = await handleFileUpload(submitData.videoUrl, 'properties');
                     if (url) submitData.videoUrl = url;
                 }
+                for (const imageField of ['masterPlanImage', 'layoutPlanUrl', 'developerLogo']) {
+                    if (submitData[imageField] instanceof File) {
+                        const url = await handleFileUpload(submitData[imageField], 'properties');
+                        if (url) submitData[imageField] = url;
+                    }
+                }
                 if (Array.isArray(submitData.imagesFileList) && submitData.imagesFileList.length > 0) {
                     const urls = [];
                     // keep old string urls
@@ -342,6 +843,18 @@ const AdminDashboard = () => {
                     submitData.images = urls.join('\n');
                     delete submitData.imagesFileList;
                 }
+                if (submitData.floorPlanFiles && submitData.floorPlans) {
+                    const floorPlanRows = parseBhkPlanRows(submitData.floorPlans);
+                    for (const row of floorPlanRows) {
+                        const file = submitData.floorPlanFiles[row.bhk];
+                        if (file instanceof File) {
+                            const url = await handleFileUpload(file, 'properties');
+                            if (url) row.imageUrl = url;
+                        }
+                    }
+                    submitData.floorPlans = serializeBhkPlanRows(floorPlanRows);
+                }
+                delete submitData.floorPlanFiles;
 
                 let endpoint = editingItem ? `/admin/${activeTab}/${editingItem.id}` : `/admin/${activeTab}`;
                 if (['properties'].includes(activeTab)) {
@@ -481,21 +994,43 @@ const AdminDashboard = () => {
                     { name: 'title', label: 'Property Title', type: 'text' },
                     { name: 'city', label: 'City', type: 'text' },
                     { name: 'locality', label: 'Locality', type: 'text' },
-                    { name: 'category', label: 'Category', type: 'select', options: [{ v: 'Residential', l: 'Residential' }, { v: 'Commercial', l: 'Commercial' }, { v: 'Plots', l: 'Plots' }, { v: 'Villa', l: 'Villa' }] },
-                    { name: 'displaySection', label: 'Display Section', type: 'select', options: [{ v: '', l: 'None' }, { v: 'FEATURED_COMMERCIAL', l: 'Featured Commercial Properties' }, { v: 'PRE_LAUNCH', l: 'Pre-Launch Properties' }, { v: 'TRENDING', l: 'Trending Properties' }, { v: 'FAST_SELLING', l: 'Fast Selling Properties' }, { v: 'PROMINSHES_AND_PLOTS', l: 'Prominshes & Plots' }] },
-                    { name: 'originalPrice', label: 'Original Price / Developer Price (₹)', type: 'price_multiplier' },
-                    { name: 'price', label: 'Group Buying Price / Final Price (₹)', type: 'price_multiplier' },
-                    { name: 'bhk', label: 'Config (BHK)', type: 'number' },
+                    { name: 'category', label: 'Property Type / Sub Category', type: 'select', options: PROPERTY_CATEGORIES },
+                    { name: 'displaySection', label: 'Display Section', type: 'select', options: PROPERTY_DISPLAY_SECTIONS, required: false },
+                    { name: 'originalPrice', label: 'Original Price / Developer Price (Fallback)', type: 'price_multiplier', required: false },
+                    { name: 'price', label: 'Starting Price (Auto from BHK plans / Fallback)', type: 'price_multiplier', required: false },
+                    { name: 'unitCount', label: 'Total Units', type: 'number' },
+                    {
+                        name: 'floorPlans',
+                        label: 'Config (BHK) + Price + Area',
+                        type: 'bhk_plans',
+                        col: 'col-span-2',
+                        required: false,
+                    },
+                    { name: 'possessionStatus', label: 'Possession Status', type: 'select', options: POSSESSION_STATUSES },
                     { name: 'area', label: 'Carpet Area (Sq.ft)', type: 'number' },
+                    { name: 'reraId', label: 'RERA ID', type: 'text' },
+                    { name: 'propertyAreaAcres', label: 'Property Area (Acres)', type: 'number' },
+                    { name: 'possessionDate', label: 'Possession Date', type: 'date' },
+                    { name: 'launchDate', label: 'Launch Date', type: 'date' },
                     { name: 'thumbnailUrl', label: 'Main Thumbnail Image', type: 'file', col: 'col-span-2' },
+                    { name: 'imagesFileList', label: 'Property Gallery Images (Select Multiple)', type: 'file_multiple', col: 'col-span-2', required: false },
                     { name: 'videoUrl', label: 'Project Video File', type: 'file', col: 'col-span-2' },
                     { name: 'trackingCount', label: 'Users Tracking Count (Display)', type: 'number' },
-                    { name: 'imagesFileList', label: 'Additional Images (Select Multiple)', type: 'file_multiple', col: 'col-span-2' },
+                    { name: 'description', label: 'Overview Description', type: 'textarea', col: 'col-span-2' },
+                    { name: 'highlights', label: 'Highlights (6-10 points, one per line)', type: 'textarea', col: 'col-span-2' },
+                    { name: 'masterPlanImage', label: 'Master Plan Image', type: 'file', col: 'col-span-2' },
+                    { name: 'layoutPlanUrl', label: 'Primary BHK Blueprint Image', type: 'file', col: 'col-span-2' },
                     { name: 'amenities', label: 'Amenities (One per line)', type: 'textarea', col: 'col-span-2' },
-                    { name: 'description', label: 'Detailed Description', type: 'textarea', col: 'col-span-2' },
+                    { name: 'specifications', label: 'Specifications (One per line)', type: 'textarea', col: 'col-span-2' },
+                    { name: 'locationUrl', label: 'Live Location / Google Map URL', type: 'text', col: 'col-span-2' },
+                    { name: 'nearbyPlaces', label: 'Nearby Places (One per line: Hospital | Name | Address | Distance | Time)', type: 'textarea', col: 'col-span-2', required: false },
                     { name: 'targetGroupSize', label: 'Target Group Size', type: 'number' },
                     { name: 'expiryDate', label: 'Offer Expiry Date', type: 'date' },
                     { name: 'developerId', label: 'Developer', type: 'creatable_select', options: developers.filter(d => d.isActive !== false).map(d => ({ v: d.id, l: d.name })) },
+                    { name: 'developerLogo', label: 'Developer Logo', type: 'file', col: 'col-span-2' },
+                    { name: 'developerDescription', label: 'About Developer Description', type: 'textarea', col: 'col-span-2' },
+                    { name: 'developerTotalProjects', label: 'Developer Total Projects', type: 'number' },
+                    { name: 'developerExperienceYears', label: 'Developer Total Experience (Years)', type: 'number' },
                     { name: 'propertyStatusId', label: 'Property Status', type: 'creatable_select', options: propertyStatuses.filter(s => s.isActive !== false).map(s => ({ v: s.id, l: s.name })) },
                     { name: 'isFeatured', label: 'Featured Property', type: 'select', options: [{ v: true, l: 'YES' }, { v: false, l: 'NO' }] },
                 ];
@@ -722,7 +1257,7 @@ const AdminDashboard = () => {
                                                     value={formData[field.name] || ''}
                                                     onChange={(e) => setFormData({ ...formData, [field.name]: e.target.value })}
                                                     className="w-full min-h-[100px] p-3 md:p-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:bg-white focus:border-[#df472b] focus:ring-4 focus:ring-[#df472b]/10 outline-none transition-all resize-none"
-                                                    placeholder={`Enter ${field.label}...`}
+                                                    placeholder={field.placeholder || `Enter ${field.label}...`}
                                                     disabled={field.disabled}
                                                 />
                                             ) : field.type === 'datetime-local' ? (
@@ -788,7 +1323,7 @@ const AdminDashboard = () => {
                                                     value={formData[field.name] || ''}
                                                     onChange={(e) => setFormData({ ...formData, [field.name]: e.target.value })}
                                                     className="w-full h-11 md:h-12 px-3 md:px-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:bg-white focus:border-[#df472b] focus:ring-4 focus:ring-[#df472b]/10 outline-none transition-all disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
-                                                    placeholder={`Enter ${field.label}...`}
+                                                    placeholder={field.placeholder || `Enter ${field.label}...`}
                                                     disabled={field.disabled}
                                                 />
                                             )}
@@ -1046,7 +1581,19 @@ const AdminDashboard = () => {
                                                     <td className="px-6 py-4">
                                                         <div className="flex items-center gap-3">
                                                             <div className="w-12 h-10 rounded-lg overflow-hidden bg-slate-100 shrink-0">
-                                                                {item.thumbnailUrl ? <img src={item.thumbnailUrl} className="w-full h-full object-cover" alt="prop" /> : <Building2 className="m-auto mt-2 text-slate-300" />}
+                                                                {getPropertyPreviewImage(item) ? (
+                                                                    <img
+                                                                        src={getPropertyPreviewImage(item)}
+                                                                        className="w-full h-full object-cover"
+                                                                        alt="prop"
+                                                                        onError={(event) => {
+                                                                            event.currentTarget.onerror = null;
+                                                                            event.currentTarget.src = FALLBACK_PROPERTY_IMAGE;
+                                                                        }}
+                                                                    />
+                                                                ) : (
+                                                                    <Building2 className="m-auto mt-2 text-slate-300" />
+                                                                )}
                                                             </div>
                                                             <p className="font-bold text-slate-900 text-sm tracking-tight truncate max-w-[200px]">{item.title}</p>
                                                         </div>
@@ -1188,7 +1735,7 @@ const AdminDashboard = () => {
                             animate={{ opacity: 1, scale: 1, y: 0 }}
                             exit={{ opacity: 0, scale: 0.95, y: 10 }}
                             transition={{ duration: 0.2 }}
-                            className="bg-white w-full max-w-3xl rounded-xl shadow-2xl overflow-hidden relative max-h-[90vh] flex flex-col border border-slate-200"
+                            className="bg-white w-full max-w-5xl rounded-xl shadow-2xl overflow-hidden relative max-h-[90vh] flex flex-col border border-slate-200"
                         >
                             <div className="p-5 md:p-6 border-b border-slate-100 flex justify-between items-center bg-white">
                                 <h3 className="text-xl font-bold text-slate-950 tracking-tight">{editingItem ? 'Edit Record' : 'Add New Record'}</h3>
@@ -1207,26 +1754,50 @@ const AdminDashboard = () => {
                                                     className="w-full px-3 py-2 bg-white border border-slate-200 rounded-md text-sm font-medium focus:border-[#db4a2b] focus:ring-1 focus:ring-[#db4a2b] outline-none"
                                                 />
                                             ) : field.type === 'file_multiple' ? (
-                                                <input
-                                                    type="file"
-                                                    multiple
-                                                    onChange={(e) => setFormData({ ...formData, [field.name]: Array.from(e.target.files) })}
-                                                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-md text-sm font-medium focus:border-[#db4a2b] focus:ring-1 focus:ring-[#db4a2b] outline-none"
+                                                <GalleryFilePicker
+                                                    field={field}
+                                                    formData={formData}
+                                                    setFormData={setFormData}
+                                                />
+                                            ) : field.type === 'bhk_plans' ? (
+                                                <BhkPlansBuilder
+                                                    value={formData[field.name] || ''}
+                                                    files={formData.floorPlanFiles || {}}
+                                                    onFileChange={(bhk, file) => {
+                                                        setFormData((prev) => ({
+                                                            ...prev,
+                                                            floorPlanFiles: {
+                                                                ...(prev.floorPlanFiles || {}),
+                                                                [bhk]: file,
+                                                            },
+                                                        }));
+                                                    }}
+                                                    onChange={(meta) => {
+                                                        const priceParts = buildPriceFormParts(meta.minPrice);
+                                                        setFormData({
+                                                            ...formData,
+                                                            [field.name]: meta.text,
+                                                            bhk: meta.primaryBhk || '',
+                                                            area: meta.primaryArea || formData.area || '',
+                                                            price: meta.minPrice || formData.price || '',
+                                                            ...priceParts,
+                                                        });
+                                                    }}
                                                 />
                                             ) : field.type === 'textarea' ? (
                                                 <textarea
                                                     value={formData[field.name] || ''}
                                                     onChange={(e) => setFormData({ ...formData, [field.name]: e.target.value })}
                                                     className="w-full min-h-[100px] p-3 bg-white border border-slate-200 rounded-md text-sm font-medium focus:border-[#db4a2b] focus:ring-1 focus:ring-[#db4a2b] outline-none resize-none"
-                                                    placeholder={`Enter ${field.label}...`}
-                                                    required
+                                                    placeholder={field.placeholder || `Enter ${field.label}...`}
+                                                    required={field.required !== false}
                                                 />
                                             ) : field.type === 'select' ? (
                                                 <select
                                                     value={formData[field.name] || ''}
                                                     onChange={(e) => setFormData({ ...formData, [field.name]: field.options[0].v === true || field.options[0].v === false ? e.target.value === 'true' : e.target.value })}
                                                     className="w-full h-10 px-3 bg-white border border-slate-200 rounded-md text-sm font-medium focus:border-[#db4a2b] focus:ring-1 focus:ring-[#db4a2b] outline-none cursor-pointer"
-                                                    required
+                                                    required={field.required !== false}
                                                 >
                                                     <option value="">Select Option</option>
                                                     {field.options.map(opt => <option key={opt.v} value={opt.v}>{opt.l}</option>)}
@@ -1237,7 +1808,7 @@ const AdminDashboard = () => {
                                                         value={formData[field.name] || ''}
                                                         onChange={(e) => setFormData({ ...formData, [field.name]: e.target.value })}
                                                         className="flex-grow h-10 px-3 bg-white border border-slate-200 rounded-md text-sm font-medium focus:border-[#db4a2b] focus:ring-1 focus:ring-[#db4a2b] outline-none cursor-pointer"
-                                                        required
+                                                        required={field.required !== false}
                                                     >
                                                         <option value="">Select Option</option>
                                                         {field.options.map(opt => <option key={opt.v} value={opt.v}>{opt.l}</option>)}
@@ -1267,7 +1838,7 @@ const AdminDashboard = () => {
                                                         }}
                                                         className="flex-grow h-10 px-3 bg-white border border-slate-200 rounded-md text-sm font-medium focus:border-[#db4a2b] focus:ring-1 focus:ring-[#db4a2b] outline-none"
                                                         placeholder={`Enter ${field.label}...`}
-                                                        required
+                                                        required={field.required !== false}
                                                     />
                                                     <select
                                                         value={formData[field.name + '_unit'] || 1}
@@ -1341,6 +1912,14 @@ const AdminDashboard = () => {
                                                         onChange={(e) => setFormData({ ...formData, [field.name]: e.target.value ? new Date(e.target.value) : null })}
                                                         className="w-full h-10 px-3 bg-white border border-slate-200 rounded-md text-sm font-medium focus:border-[#db4a2b] focus:ring-1 focus:ring-[#db4a2b] outline-none"
                                                     />
+                                                ) : field.type === 'date' ? (
+                                                    <input
+                                                        type="date"
+                                                        value={toDateInputValue(formData[field.name])}
+                                                        onChange={(e) => setFormData({ ...formData, [field.name]: e.target.value })}
+                                                        className="w-full h-10 px-3 bg-white border border-slate-200 rounded-md text-sm font-medium focus:border-[#db4a2b] focus:ring-1 focus:ring-[#db4a2b] outline-none"
+                                                        required={field.required !== false}
+                                                    />
                                                 ) : (
                                                     <input
                                                         type={field.type}
@@ -1349,7 +1928,7 @@ const AdminDashboard = () => {
                                                         className="w-full h-10 px-3 bg-white border border-slate-200 rounded-md text-sm font-medium focus:border-[#db4a2b] focus:ring-1 focus:ring-[#db4a2b] outline-none disabled:bg-slate-50 disabled:text-slate-400"
                                                         placeholder={`Enter ${field.label}...`}
                                                         disabled={field.disabled}
-                                                        required={field.type !== 'checkbox'}
+                                                        required={field.required !== false && field.type !== 'checkbox'}
                                                     />
                                                 )
                                             )}

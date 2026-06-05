@@ -1,0 +1,18 @@
+ALTER TABLE `properties`
+  ADD COLUMN `unitCount` INT NULL DEFAULT NULL,
+  ADD COLUMN `possessionStatus` varchar(191) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  ADD COLUMN `reraId` varchar(191) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  ADD COLUMN `propertyAreaAcres` decimal(10,2) DEFAULT NULL,
+  ADD COLUMN `possessionDate` datetime(3) DEFAULT NULL,
+  ADD COLUMN `launchDate` datetime(3) DEFAULT NULL,
+  ADD COLUMN `highlights` json DEFAULT NULL,
+  ADD COLUMN `masterPlanImage` text COLLATE utf8mb4_unicode_ci,
+  ADD COLUMN `layoutPlanUrl` text COLLATE utf8mb4_unicode_ci,
+  ADD COLUMN `floorPlans` json DEFAULT NULL,
+  ADD COLUMN `specifications` json DEFAULT NULL,
+  ADD COLUMN `locationUrl` text COLLATE utf8mb4_unicode_ci,
+  ADD COLUMN `nearbyPlaces` json DEFAULT NULL,
+  ADD COLUMN `developerLogo` text COLLATE utf8mb4_unicode_ci,
+  ADD COLUMN `developerDescription` text COLLATE utf8mb4_unicode_ci,
+  ADD COLUMN `developerTotalProjects` INT NULL DEFAULT NULL,
+  ADD COLUMN `developerExperienceYears` INT NULL DEFAULT NULL;

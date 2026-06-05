@@ -25,6 +25,7 @@ const notificationRoutes = require('./routes/notification.routes');
 const rmRoutes = require('./routes/rm.routes');
 const youtubeRoutes = require('./routes/youtube.routes');
 const ensurePropertyDisplaySection = require('./utils/ensurePropertyDisplaySection');
+const ensurePropertyDetailFields = require('./utils/ensurePropertyDetailFields');
 const ensurePropertyStatuses = require('./utils/ensurePropertyStatuses');
 
 const { errorHandler } = require('./middleware/error.middleware');
@@ -143,6 +144,7 @@ httpServer.listen(PORT, async () => {
 
   try {
     await ensurePropertyDisplaySection();
+    await ensurePropertyDetailFields();
     await ensurePropertyStatuses();
   } catch (error) {
     console.error('Warning: Failed to ensure property schema:', error.message);

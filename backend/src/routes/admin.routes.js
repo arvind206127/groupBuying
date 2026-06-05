@@ -6,6 +6,7 @@ const { settingsToObject, stripStyleSettings } = require('../utils/siteSettings'
 const { notifyRMAssigned } = require('../services/notification.service');
 const { uploadToBunny } = require('../services/bunny.service');
 const { compressVideo, getVideoDuration, getFileSizeInMB } = require('../services/video.service');
+const ensurePropertyDetailFields = require('../utils/ensurePropertyDetailFields');
 const ensurePropertyStatuses = require('../utils/ensurePropertyStatuses');
 const multer = require('multer');
 const path = require('path');
@@ -133,6 +134,7 @@ router.put('/users/:id/assign-rm', async (req, res, next) => {
 // CRUD Properties (Admin convenience)
 router.get('/properties', async (req, res, next) => {
   try {
+    await ensurePropertyDetailFields();
     await ensurePropertyStatuses();
     const properties = await db.property.findMany({
       include: { developer: { select: { name: true } }, propertyStatus: { select: { id: true, name: true } }, _count: { select: { groups: true } } },
@@ -396,7 +398,12 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       res.json({ success: true, url: cdnUrl });
     } catch (uploadError) {
       console.error('Bunny.net Upload Error:', uploadError);
-      return res.status(500).json({ success: false, message: 'Failed to upload to Bunny.net', error: uploadError.message });
+      return res.json({
+        success: true,
+        url: `/uploads/${req.file.filename}`,
+        storage: 'local',
+        message: 'Uploaded locally because CDN upload failed',
+      });
     }
   } catch (error) {
     console.error('General Upload Error:', error);

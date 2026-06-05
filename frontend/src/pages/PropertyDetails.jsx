@@ -37,6 +37,7 @@ import { toast } from 'react-hot-toast';
 import SearchPage from './Search';
 
 const fallbackImage = 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?auto=format&fit=crop&q=80&w=1400';
+const API_ORIGIN = (api.defaults.baseURL || '').replace(/\/api\/?$/, '');
 
 const tabs = [
   { id: 'property-details', label: 'Property Details' },
@@ -51,8 +52,14 @@ const tabs = [
 
 const getImageUrl = (image) => {
   if (!image) return '';
-  if (typeof image === 'string') return image;
-  return image.url || image.src || '';
+  const imageUrl = typeof image === 'string'
+    ? image
+    : image.url || image.src || image.imageUrl || image.image || image.blueprintImage || image.blueprintUrl || image.planImage || image.planUrl || '';
+  if (!imageUrl) return '';
+  if (/^(https?:\/\/|data:image\/|blob:)/i.test(imageUrl)) return imageUrl;
+  if (imageUrl.startsWith('/')) return `${API_ORIGIN}${imageUrl}`;
+  if (imageUrl.startsWith('uploads/')) return `${API_ORIGIN}/${imageUrl}`;
+  return imageUrl;
 };
 
 const buildGallery = (property) => {
@@ -60,13 +67,76 @@ const buildGallery = (property) => {
     ? property.images.map(getImageUrl).filter(Boolean)
     : [];
   const featuredImage = property?.thumbnailUrl || property?.image || property?.imageUrl;
-  return [...new Set([featuredImage, ...images].filter(Boolean))];
+  return [...new Set([getImageUrl(featuredImage), ...images].filter(Boolean))];
 };
 
 const formatArea = (area) => {
   const numericArea = Number(area);
   if (!Number.isFinite(numericArea) || numericArea <= 0) return 'On request';
   return `${numericArea.toLocaleString('en-IN', { maximumFractionDigits: 2 })} sq.ft.`;
+};
+
+const formatAcres = (area) => {
+  const numericArea = Number(area);
+  if (!Number.isFinite(numericArea) || numericArea <= 0) return 'On request';
+  return `${numericArea.toLocaleString('en-IN', { maximumFractionDigits: 2 })} acres`;
+};
+
+const formatPlanArea = (area, fallbackArea) => {
+  const candidate = area || fallbackArea;
+  if (!candidate) return '';
+  const text = String(candidate).trim();
+  const numericArea = Number(text.replace(/,/g, ''));
+  if (Number.isFinite(numericArea) && numericArea > 0 && /^\d[\d,]*(\.\d+)?$/.test(text)) {
+    return formatArea(numericArea);
+  }
+  return text;
+};
+
+const formatPlanPriceValue = (value) => {
+  if (value === undefined || value === null || value === '') return '';
+  const text = String(value).trim();
+  const numericValue = Number(text.replace(/,/g, ''));
+  if (Number.isFinite(numericValue) && numericValue > 0 && /^\d[\d,]*(\.\d+)?$/.test(text)) {
+    return formatCurrency(numericValue);
+  }
+  return text;
+};
+
+const formatPlanPrice = (plan, fallbackPrice) => {
+  if (!plan || typeof plan === 'string') {
+    return fallbackPrice > 0 ? formatCurrency(fallbackPrice) : '';
+  }
+
+  const directPrice = plan.priceLabel || plan.priceText || plan.priceRange || plan.displayPrice;
+  if (directPrice) return String(directPrice).trim();
+
+  const priceFrom = plan.price ?? plan.minPrice ?? plan.priceFrom;
+  const priceTo = plan.priceTo ?? plan.maxPrice ?? plan.priceTill;
+  const formattedFrom = formatPlanPriceValue(priceFrom);
+  const formattedTo = formatPlanPriceValue(priceTo);
+
+  if (formattedFrom && formattedTo && formattedFrom !== formattedTo) {
+    return `${formattedFrom} - ${formattedTo}`;
+  }
+
+  return formattedFrom || formattedTo || (fallbackPrice > 0 ? formatCurrency(fallbackPrice) : '');
+};
+
+const getPlanLabel = (plan, fallbackLabel) => {
+  if (!plan || typeof plan === 'string') return fallbackLabel;
+  if (plan.label || plan.title || plan.name || plan.configuration) {
+    return plan.label || plan.title || plan.name || plan.configuration;
+  }
+  return plan.bhk ? `${plan.bhk} BHK` : fallbackLabel;
+};
+
+const toList = (value) => {
+  if (Array.isArray(value)) return value.filter(Boolean);
+  if (typeof value === 'string') {
+    return value.split('\n').map((item) => item.trim()).filter(Boolean);
+  }
+  return [];
 };
 
 const formatSavingsShort = (value) => {
@@ -108,21 +178,75 @@ const getRangePercent = (value, min, max) => {
 };
 
 const DetailStat = ({ icon: Icon, label, value, sub }) => (
-  <div className="rounded-2xl border border-[#f1d6ca] bg-white px-5 py-4 shadow-[0_14px_34px_rgba(62,35,22,0.06)]">
-    <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-2xl bg-[#fff0ea] text-[#df472b]">
-      <Icon size={18} />
+  <div className="rounded-2xl border border-[#f1d6ca] bg-white px-4 py-2.5 shadow-[0_10px_24px_rgba(62,35,22,0.05)]">
+    <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-xl bg-[#fff0ea] text-[#df472b]">
+      <Icon size={15} />
     </div>
-    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#9b8a7d]">{label}</p>
-    <p className="mt-1 text-lg font-bold text-[#15110f]">{value}</p>
-    {sub ? <p className="mt-1 text-xs font-medium text-[#8b7d72]">{sub}</p> : null}
+    <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#9b8a7d]">{label}</p>
+    <p className="mt-0.5 text-base font-bold text-[#15110f]">{value}</p>
+    {sub ? <p className="mt-0.5 text-[11px] font-medium text-[#8b7d72]">{sub}</p> : null}
   </div>
 );
 
 const InfoTile = ({ label, value }) => (
-  <div className="rounded-2xl border border-[#f0d8ce] bg-[#fffaf6] p-4">
-    <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#9b8a7d]">{label}</p>
-    <p className="mt-2 break-words text-sm font-bold text-[#19110d]">{value}</p>
+  <div className="rounded-2xl border border-[#f0d8ce] bg-[#fffaf6] px-4 py-3">
+    <p className="text-[12px] font-semibold tracking-normal text-[#8f7a6f]">
+      {label ? `${label.charAt(0).toUpperCase()}${label.slice(1).toLowerCase()}` : ''}
+    </p>
+    <p className="mt-1 break-words text-sm font-bold text-[#19110d]">{value}</p>
   </div>
+);
+
+const getNearbyIcon = (label = '') => {
+  const key = label.toLowerCase();
+  if (key.includes('school')) return GraduationCap;
+  if (key.includes('hospital')) return Hospital;
+  if (key.includes('hotel')) return Hotel;
+  if (key.includes('cafe')) return Coffee;
+  if (key.includes('restaurant')) return Utensils;
+  return Building;
+};
+
+const FloorPlanIllustration = () => (
+  <svg
+    viewBox="0 0 640 390"
+    preserveAspectRatio="none"
+    role="img"
+    aria-label="Indicative apartment floor plan"
+    className="h-[232px] w-full max-w-[520px] drop-shadow-[0_12px_24px_rgba(223,71,43,0.16)]"
+  >
+    <defs>
+      <radialGradient id="floorPlanGlow" cx="50%" cy="48%" r="68%">
+        <stop offset="0%" stopColor="#fff7f2" />
+        <stop offset="62%" stopColor="#fff0e9" />
+        <stop offset="100%" stopColor="#fffaf6" />
+      </radialGradient>
+    </defs>
+    <path
+      d="M92 72H468C520 72 556 108 556 156V248C556 273 543 296 522 310V348H92V276H142C171 276 188 295 188 324V348H260V300H414V348H486V262H556"
+      fill="url(#floorPlanGlow)"
+      stroke="#df472b"
+      strokeWidth="10"
+      strokeLinecap="square"
+      strokeLinejoin="round"
+    />
+    <path
+      d="M92 72V224H164V250M92 120H154V72M154 72V124H204V72M204 72V166H252M252 72V166H374M444 72V168H474M444 168H512M92 224H250V278H414M320 224V300M320 240H384M320 260H384M320 280H384M486 262L536 348M536 262L486 348"
+      fill="none"
+      stroke="#df472b"
+      strokeWidth="10"
+      strokeLinecap="square"
+      strokeLinejoin="round"
+    />
+    <path
+      d="M142 276C171 276 188 295 188 324M164 224V250M250 224H310M414 300H486"
+      fill="none"
+      stroke="#df472b"
+      strokeWidth="7"
+      strokeLinecap="square"
+      strokeLinejoin="round"
+    />
+  </svg>
 );
 
 const PropertyDetails = () => {
@@ -135,6 +259,7 @@ const PropertyDetails = () => {
   const [property, setProperty] = useState(null);
   const [activeTab, setActiveTab] = useState('property-details');
   const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [activeLayoutPlanId, setActiveLayoutPlanId] = useState('');
   const [loading, setLoading] = useState(true);
   const [joining, setJoining] = useState(false);
   const [isWishlisted, setIsWishlisted] = useState(false);
@@ -345,6 +470,16 @@ const PropertyDetails = () => {
   }, [activeImageIndex, galleryImages.length]);
 
   useEffect(() => {
+    if (galleryImages.length <= 1) return undefined;
+
+    const timer = window.setInterval(() => {
+      setActiveImageIndex((previousIndex) => (previousIndex + 1) % galleryImages.length);
+    }, 4000);
+
+    return () => window.clearInterval(timer);
+  }, [galleryImages.length]);
+
+  useEffect(() => {
     const groupId = property?.groups?.[0]?.id;
     if (!socket || !groupId) return undefined;
 
@@ -377,6 +512,61 @@ const PropertyDetails = () => {
     }
   }, [property?.price]);
 
+  useEffect(() => {
+    if (!property) return undefined;
+
+    let ticking = false;
+
+    const getScrollContainer = () => (
+      window.matchMedia('(min-width: 1024px)').matches ? detailContentRef.current : null
+    );
+
+    const updateActiveTabFromScroll = () => {
+      const sectionElements = tabs
+        .map((tab) => document.getElementById(`section-${tab.id}`))
+        .filter(Boolean);
+
+      if (!sectionElements.length) return;
+
+      const scrollContainer = getScrollContainer();
+      const containerRect = scrollContainer?.getBoundingClientRect();
+      const viewportTop = containerRect?.top || 0;
+      const viewportHeight = scrollContainer?.clientHeight || window.innerHeight;
+      const markerLine = viewportTop + Math.min(180, viewportHeight * 0.34);
+
+      let nextTabId = sectionElements[0].id.replace('section-', '');
+
+      sectionElements.forEach((sectionElement) => {
+        if (sectionElement.getBoundingClientRect().top <= markerLine) {
+          nextTabId = sectionElement.id.replace('section-', '');
+        }
+      });
+
+      setActiveTab((currentTab) => (currentTab === nextTabId ? currentTab : nextTabId));
+    };
+
+    const requestSync = () => {
+      if (ticking) return;
+      ticking = true;
+      window.requestAnimationFrame(() => {
+        updateActiveTabFromScroll();
+        ticking = false;
+      });
+    };
+
+    const scrollContainer = getScrollContainer();
+    scrollContainer?.addEventListener('scroll', requestSync, { passive: true });
+    window.addEventListener('scroll', requestSync, { passive: true });
+    window.addEventListener('resize', requestSync);
+    window.setTimeout(updateActiveTabFromScroll, 80);
+
+    return () => {
+      scrollContainer?.removeEventListener('scroll', requestSync);
+      window.removeEventListener('scroll', requestSync);
+      window.removeEventListener('resize', requestSync);
+    };
+  }, [property?.id]);
+
   if (loading || !property) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-5 bg-[#fffaf6] text-[#df472b]">
@@ -400,7 +590,7 @@ const PropertyDetails = () => {
   const discountPercent = originalPrice > targetPrice ? Math.round((savings / originalPrice) * 100) : 0;
   const displayLocation = [property.locality, property.city, property.state].filter(Boolean).join(', ') || property.address || 'Prime Location';
   const nearbyArea = property.locality || property.city || 'this project';
-  const nearbyPlaceCategories = [
+  const fallbackNearbyPlaceCategories = [
     {
       id: 'school',
       label: 'School',
@@ -447,19 +637,90 @@ const PropertyDetails = () => {
       ],
     },
   ];
+  const nearbyPlaceGroups = toList(property.nearbyPlaces).reduce((groups, place) => {
+    const category = typeof place === 'string' ? 'Nearby' : place.category || 'Nearby';
+    const key = category.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    const nextPlace = typeof place === 'string'
+      ? { name: place, address: displayLocation, distance: '', time: '' }
+      : place;
+
+    if (!groups.has(key)) {
+      groups.set(key, {
+        id: key,
+        label: category,
+        icon: getNearbyIcon(category),
+        places: [],
+      });
+    }
+
+    groups.get(key).places.push({
+      name: nextPlace.name || category,
+      address: nextPlace.address || displayLocation,
+      distance: nextPlace.distance || 'Nearby',
+      time: nextPlace.time || 'Convenient access',
+    });
+
+    return groups;
+  }, new Map());
+  const nearbyPlaceCategories = nearbyPlaceGroups.size ? [...nearbyPlaceGroups.values()] : fallbackNearbyPlaceCategories;
   const activeNearbyData = nearbyPlaceCategories.find((category) => category.id === activeNearbyCategory) || nearbyPlaceCategories[0];
   const ActiveNearbyIcon = activeNearbyData.icon;
   const propertyStatusLabel = property.propertyStatus?.name || property.status?.replace(/_/g, ' ') || 'Verified Deal';
-  const possessionLabel = property.possession || formatDateLabel(property.expiryDate) || propertyStatusLabel;
+  const possessionLabel = property.possessionStatus || property.possession || formatDateLabel(property.possessionDate) || formatDateLabel(property.expiryDate) || propertyStatusLabel;
   const developerName = property.developer?.name || 'Institutional Developer';
-  const developerLogo = property.developer?.logo || property.developer?.logoUrl;
+  const developerLogo = property.developerLogo || property.developer?.logo || property.developer?.logoUrl;
+  const developerDescription = property.developerDescription || property.developer?.description || 'Developer details will be updated soon.';
   const couponDownloads = Number(property.couponDownloads || property.downloadCount || property.trackingCount) || currentMembers;
   const joinedMemberRows = groupMembers;
   const configurationLabel = property.bhk ? `${property.bhk} BHK` : property.category || 'Property';
-  const amenities = (Array.isArray(property.amenities) ? property.amenities : []).filter(Boolean);
+  const amenities = toList(property.amenities);
+  const floorPlanItems = toList(property.floorPlans);
   const rawLayoutPlan = property.layoutPlanUrl || property.floorPlanUrl || property.floorPlan || property.layoutPlan;
   const layoutPlanUrl = getImageUrl(rawLayoutPlan);
-  const layoutPlanImage = layoutPlanUrl || galleryImages[1] || activeImage;
+  const masterPlanImage = getImageUrl(property.masterPlanImage);
+  const useSinglePlanFallbacks = floorPlanItems.length <= 1;
+  const normalizedFloorPlans = floorPlanItems.map((plan, index) => {
+    const fallbackImageUrl = useSinglePlanFallbacks && index === 0 ? layoutPlanUrl : '';
+    return {
+      id: `floor-plan-${index}`,
+      type: 'floor',
+      label: getPlanLabel(plan, configurationLabel),
+      priceLabel: formatPlanPrice(plan, useSinglePlanFallbacks ? targetPrice : 0),
+      areaLabel: formatPlanArea(
+        typeof plan === 'string' ? '' : plan?.area || plan?.superArea || plan?.carpetArea || plan?.size,
+        useSinglePlanFallbacks ? property.area : ''
+      ),
+      imageUrl: getImageUrl(plan) || fallbackImageUrl,
+    };
+  });
+
+  if (!normalizedFloorPlans.length && layoutPlanUrl) {
+    normalizedFloorPlans.push({
+      id: 'floor-plan-primary',
+      type: 'floor',
+      label: configurationLabel,
+      priceLabel: targetPrice > 0 ? formatCurrency(targetPrice) : '',
+      areaLabel: formatArea(property.area),
+      imageUrl: layoutPlanUrl,
+    });
+  }
+
+  const layoutPlanItems = [
+    {
+      id: 'master-plan',
+      type: 'master',
+      label: 'Master Plan',
+      priceLabel: '',
+      areaLabel: '',
+      imageUrl: masterPlanImage,
+    },
+    ...normalizedFloorPlans,
+  ];
+  const defaultLayoutPlan = normalizedFloorPlans[0] || layoutPlanItems[0];
+  const activeLayoutPlan = layoutPlanItems.find((item) => item.id === activeLayoutPlanId) || defaultLayoutPlan;
+  const activeLayoutIndex = Math.max(layoutPlanItems.findIndex((item) => item.id === activeLayoutPlan?.id), 0);
+  const areaPlanItems = normalizedFloorPlans.filter((item) => item.areaLabel);
+  const locationUrl = property.locationUrl || '';
   const maxEmiLoanAmount = Math.max(130000000, targetPrice, originalPrice, emiLoanAmount);
   const boundedEmiLoanAmount = Math.min(Math.max(emiLoanAmount, 100000), maxEmiLoanAmount);
   const estimatedEmi = calculateMonthlyEmi(boundedEmiLoanAmount, emiInterestRate, emiTenureYears);
@@ -502,15 +763,26 @@ const PropertyDetails = () => {
   ];
   const propertyDetailRows = [
     ['Project Type', property.category || 'Residential'],
+    ['Total Units', property.unitCount ? `${property.unitCount} units` : 'On request'],
     ['Configuration', configurationLabel],
-    ['Super Area', formatArea(property.area)],
+    ['Carpet Area', formatArea(property.area)],
+    ['Property Area', formatAcres(property.propertyAreaAcres)],
+    ['RERA ID', property.reraId || 'On request'],
     ['Status', propertyStatusLabel],
     ['Possession', possessionLabel],
+    ['Possession Date', formatDateLabel(property.possessionDate) || 'On request'],
+    ['Launch Date', formatDateLabel(property.launchDate) || 'On request'],
     ['Developer', developerName],
     ['City', property.city || 'On request'],
     ['Locality', property.locality || 'On request'],
   ];
-  const highlightItems = [
+  const customHighlightItems = toList(property.highlights);
+  const highlightItems = customHighlightItems.length ? customHighlightItems.map((item) => {
+    if (Array.isArray(item)) return item;
+    if (typeof item === 'object') return [item.title || item.label || 'Highlight', item.description || item.value || ''];
+    const [title, description] = String(item).split('|').map((part) => part.trim());
+    return [title, description || ''];
+  }) : [
     [
       discountPercent > 0 ? `${discountPercent}% Developer Discount` : 'Developer Direct Deal',
       savings > 0 ? `Save up to ${formatSavingsShort(savings)} against developer price.` : 'Coordinate directly for best available pricing.',
@@ -519,7 +791,13 @@ const PropertyDetails = () => {
     [propertyStatusLabel, 'Verified opportunity with transparent group buying workflow.'],
     ['No Middlemen', 'Bulk-purchase coordination directly from the developer.'],
   ];
-  const specificationRows = [
+  const customSpecificationRows = toList(property.specifications);
+  const specificationRows = customSpecificationRows.length ? customSpecificationRows.map((item, index) => {
+    if (Array.isArray(item)) return item;
+    if (typeof item === 'object') return [item.label || item.title || `Specification ${index + 1}`, item.value || item.description || 'Available'];
+    const [label, value] = String(item).split('|').map((part) => part.trim());
+    return value ? [label, value] : [`Specification ${index + 1}`, label];
+  }) : [
     ['Target Price', formatCurrency(targetPrice)],
     ['Developer Price', formatCurrency(originalPrice)],
     ['Savings', savings > 0 ? formatCurrency(savings) : 'On request'],
@@ -541,6 +819,26 @@ const PropertyDetails = () => {
 
   const handleTabSelect = (tabId) => {
     setActiveTab(tabId);
+    window.requestAnimationFrame(() => {
+      const targetSection = document.getElementById(`section-${tabId}`);
+      const scrollContainer = detailContentRef.current;
+      const shouldUseInnerScroll = window.matchMedia('(min-width: 1024px)').matches && scrollContainer && targetSection;
+
+      if (shouldUseInnerScroll) {
+        const containerTop = scrollContainer.getBoundingClientRect().top;
+        const targetTop = targetSection.getBoundingClientRect().top;
+        scrollContainer.scrollTo({
+          top: scrollContainer.scrollTop + targetTop - containerTop - 8,
+          behavior: 'smooth',
+        });
+        return;
+      }
+
+      targetSection?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
+    });
   };
 
   return (
@@ -678,7 +976,7 @@ const PropertyDetails = () => {
             initial={{ opacity: 0, scale: 0.98 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.45, ease: 'easeOut', delay: 0.08 }}
-            className="relative min-h-[288px] overflow-hidden rounded-[34px] bg-[#08152b] shadow-[0_24px_70px_rgba(8,21,43,0.2)] lg:min-h-[536px]"
+            className="relative h-[320px] max-h-[72vh] overflow-hidden rounded-[34px] bg-[#08152b] shadow-[0_24px_70px_rgba(8,21,43,0.2)] sm:h-[430px] lg:h-[536px]"
           >
             <img
               src={activeImage}
@@ -686,7 +984,7 @@ const PropertyDetails = () => {
               onError={(event) => {
                 event.currentTarget.src = fallbackImage;
               }}
-              className="h-full min-h-[288px] w-full object-cover lg:min-h-[536px]"
+              className="h-full w-full object-cover object-center"
             />
             <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(4,13,30,0.18),rgba(4,13,30,0.02)_45%,rgba(4,13,30,0.16))]" />
 
@@ -727,25 +1025,12 @@ const PropertyDetails = () => {
                 >
                   <ChevronRight size={42} strokeWidth={3} />
                 </button>
-                <div className="absolute bottom-5 left-1/2 flex -translate-x-1/2 items-center gap-3">
-                  {galleryImages.map((imageUrl, imageIndex) => (
-                    <button
-                      key={`${imageUrl}-${imageIndex}`}
-                      type="button"
-                      aria-label={`Go to image ${imageIndex + 1}`}
-                      onClick={() => setActiveImageIndex(imageIndex)}
-                      className={`h-2.5 rounded-full bg-white transition-all ${
-                        activeImageIndex === imageIndex ? 'w-9 opacity-100' : 'w-2.5 opacity-80'
-                      }`}
-                    />
-                  ))}
-                </div>
               </>
             ) : null}
           </motion.div>
         </section>
 
-        <div className="relative left-1/2 w-screen -translate-x-1/2 border-b border-[#e4ddd8] bg-white/95 px-4 shadow-[0_10px_24px_rgba(62,35,22,0.04)] md:px-10">
+        <div className="sticky top-20 z-40 w-full rounded-2xl border border-[#e4ddd8] bg-white/95 px-3 shadow-[0_10px_24px_rgba(62,35,22,0.04)] backdrop-blur md:px-5">
           <div className="flex items-center gap-7 overflow-x-auto no-scrollbar py-3 lg:justify-between">
             {tabs.map((tab) => (
               <button
@@ -764,16 +1049,15 @@ const PropertyDetails = () => {
           </div>
         </div>
 
-        <section className="mt-6 grid gap-8 lg:grid-cols-[minmax(0,1fr)_420px] lg:items-start">
-          <div className="space-y-8">
-            <div ref={detailContentRef} className="overflow-hidden rounded-3xl border border-[#f0d8ce] bg-white shadow-[0_18px_50px_rgba(62,35,22,0.08)]">
-              {activeTab === 'property-details' ? (
-                <div className="border-b border-[#f0d8ce] px-7 py-7">
-                  <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
+        <section className="mt-6 grid gap-8 lg:h-[calc(100vh-8rem)] lg:grid-cols-[minmax(0,1fr)_420px] lg:items-start">
+          <div ref={detailContentRef} className="space-y-8 lg:h-full lg:overflow-y-auto lg:pr-3 no-scrollbar">
+            <div id="section-property-details" className="scroll-mt-32 overflow-hidden rounded-3xl border border-[#f0d8ce] bg-white shadow-[0_18px_50px_rgba(62,35,22,0.08)]">
+                <div className="border-b border-[#f0d8ce] px-5 py-4 md:px-7">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                     <div>
-                      <p className="text-xs font-bold tracking-[0.2em] text-[#df472b]">{activeTabLabel}</p>
-                      <h2 className="mt-2 text-3xl font-semibold">{property.title}</h2>
-                      <p className="mt-3 flex items-center gap-2 text-sm font-medium text-[#6c5d53]">
+                      <p className="text-xs font-bold tracking-[0.2em] text-[#df472b]">Property Details</p>
+                      <h2 className="mt-1 text-2xl font-semibold md:text-[1.7rem]">{property.title}</h2>
+                      <p className="mt-2 flex items-center gap-2 text-sm font-medium text-[#6c5d53]">
                         <MapPin size={16} className="text-[#df472b]" />
                         {displayLocation}
                       </p>
@@ -783,7 +1067,7 @@ const PropertyDetails = () => {
                       <button
                         type="button"
                         onClick={handleCompare}
-                        className={`inline-flex h-14 min-w-[156px] items-center justify-center gap-2 rounded-2xl border px-5 text-sm font-bold transition-all ${
+                        className={`inline-flex h-10 min-w-[132px] items-center justify-center gap-2 rounded-xl border px-4 text-sm font-bold transition-all ${
                           isInComparison
                             ? 'border-[#df472b] bg-[#df472b] text-white'
                             : 'border-[#ead7cd] bg-white text-[#241812] hover:border-[#df472b]'
@@ -794,7 +1078,7 @@ const PropertyDetails = () => {
                       </button>
                       <button
                         type="button"
-                        className="inline-flex h-14 min-w-[210px] items-center justify-center gap-2 rounded-2xl bg-[#df472b] px-5 text-sm font-bold text-white transition-all hover:bg-[#c83e24]"
+                        className="inline-flex h-10 min-w-[178px] items-center justify-center gap-2 rounded-xl bg-[#df472b] px-4 text-sm font-bold text-white transition-all hover:bg-[#c83e24]"
                       >
                         <Phone size={16} />
                         Contact Developer
@@ -802,80 +1086,141 @@ const PropertyDetails = () => {
                     </div>
                   </div>
 
-                  <div className="mt-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                     <DetailStat icon={Building} label="Configuration" value={configurationLabel} sub={property.category || 'Residential'} />
                     <DetailStat icon={Maximize2} label="Super Area" value={formatArea(property.area)} sub="Area details" />
                     <DetailStat icon={ShieldCheck} label="Status" value={propertyStatusLabel} sub="Verified opportunity" />
                     <DetailStat icon={Calendar} label="Possession" value={possessionLabel} sub="Timeline" />
                   </div>
                 </div>
-              ) : null}
 
-              <div className="px-5 py-8 md:px-7">
-                <AnimatePresence mode="wait">
+              <div className="px-5 py-5 md:px-7">
                   <motion.div
-                    key={activeTab}
+                    key="property-sections"
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
                     transition={{ duration: 0.18 }}
+                    className="space-y-8"
                   >
-                    {activeTab === 'property-details' ? (
-                      <div className="space-y-6">
-                        <p className="whitespace-pre-wrap text-base font-medium leading-8 text-[#574b43]">
+                    <div>
+                      <div className="space-y-3.5">
+                        <p className="whitespace-pre-wrap rounded-2xl border border-[#f0d8ce] bg-white px-5 py-4 text-[15px] font-medium leading-7 text-[#574b43]">
                           {property.description || 'Property description will be updated soon.'}
                         </p>
-                        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                           {propertyDetailRows.map(([label, value]) => (
                             <InfoTile key={label} label={label} value={value} />
                           ))}
                         </div>
                       </div>
-                    ) : null}
+                    </div>
 
-                    {activeTab === 'highlights' ? (
-                      <div className="grid gap-4 md:grid-cols-2">
+                    <section id="section-highlights" className="scroll-mt-32">
+                      <div className="space-y-4">
+                        <h2 className="text-2xl font-semibold tracking-[-0.03em] text-[#111111]">Highlights</h2>
                         {highlightItems.map(([title, description]) => (
-                          <div key={title} className="rounded-3xl border border-[#f0d8ce] bg-white p-5 shadow-[0_14px_34px_rgba(62,35,22,0.05)]">
-                            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#fff0ea] text-[#df472b]">
-                              <CheckCircle2 size={18} />
+                          <div key={title} className="flex items-center gap-4 rounded-2xl bg-[linear-gradient(90deg,#ffe0d6_0%,#f9f9f9_18%,#f9f9f9_100%)] px-5 py-4 shadow-[0_12px_28px_rgba(62,35,22,0.04)]">
+                            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#df472b] text-white">
+                              <CheckCircle2 size={16} strokeWidth={3} />
                             </span>
-                            <h3 className="mt-4 text-lg font-black text-[#17110e]">{title}</h3>
-                            <p className="mt-2 text-sm font-medium leading-6 text-[#6c5d53]">{description}</p>
+                            <p className="text-base font-medium leading-6 text-[#16110f]">
+                              {description ? `${title} - ${description}` : title}
+                            </p>
                           </div>
                         ))}
                       </div>
-                    ) : null}
+                    </section>
 
-                    {activeTab === 'layout-plan' ? (
-                      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(250px,0.8fr)]">
-                        <div className="relative min-h-[280px] overflow-hidden rounded-3xl border border-[#f0d8ce] bg-[#fffaf6]">
-                          <img
-                            src={layoutPlanImage}
-                            alt={`${property.title} layout plan`}
-                            onError={(event) => {
-                              event.currentTarget.src = fallbackImage;
-                            }}
-                            className="h-full min-h-[280px] w-full object-cover"
-                          />
-                          {!layoutPlanUrl ? (
-                            <div className="absolute bottom-4 left-4 rounded-full border border-[#ead7cd] bg-white px-4 py-2 text-xs font-bold uppercase tracking-[0.16em] text-[#6c5d53] shadow-xl">
-                              Layout plan coming soon
-                            </div>
+                    <section id="section-layout-plan" className="scroll-mt-32">
+                      <div className="overflow-hidden rounded-[28px] border border-[#e8ddd7] bg-white">
+                        <div className="flex flex-wrap border-b border-[#eee5df] bg-[#f5f5f5]">
+                          {layoutPlanItems.map((item) => {
+                            const isActive = activeLayoutPlan?.id === item.id;
+
+                            return (
+                              <button
+                                key={item.id}
+                                type="button"
+                                onClick={() => setActiveLayoutPlanId(item.id)}
+                                className={`min-w-[145px] border-r border-[#e2ddd9] px-5 py-4 text-left transition ${
+                                  isActive
+                                    ? 'border-b-2 border-b-[#df472b] bg-white text-[#df472b] shadow-[0_8px_18px_rgba(62,35,22,0.12)]'
+                                    : 'bg-[#f3f3f3] text-[#737b83] hover:bg-white'
+                                }`}
+                              >
+                                <p className="text-base font-bold leading-tight">{item.label}</p>
+                                {item.priceLabel ? (
+                                  <p className={`mt-1 text-sm font-semibold ${isActive ? 'text-[#df472b]' : 'text-[#6f7882]'}`}>
+                                    {item.priceLabel}
+                                  </p>
+                                ) : null}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {areaPlanItems.length ? (
+                          <div className="flex flex-wrap gap-8 border-b border-[#eee5df] px-6 pt-4">
+                            {areaPlanItems.map((item) => {
+                              const isActive = activeLayoutPlan?.id === item.id;
+
+                              return (
+                                <button
+                                  key={`${item.id}-area`}
+                                  type="button"
+                                  onClick={() => setActiveLayoutPlanId(item.id)}
+                                  className={`border-b-2 px-2 pb-3 text-base font-semibold transition ${
+                                    isActive
+                                      ? 'border-[#df472b] text-[#df472b]'
+                                      : 'border-transparent text-[#737b83] hover:border-[#f0d8ce] hover:text-[#df472b]'
+                                  }`}
+                                >
+                                  {item.areaLabel}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ) : null}
+
+                        <div className="relative flex min-h-[315px] items-center justify-center overflow-hidden bg-white px-12 py-8">
+                          {layoutPlanItems.length > 1 ? (
+                            <button
+                              type="button"
+                              onClick={() => setActiveLayoutPlanId(layoutPlanItems[(activeLayoutIndex - 1 + layoutPlanItems.length) % layoutPlanItems.length].id)}
+                              className="absolute left-5 top-1/2 z-20 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white text-[#17110e] shadow-[0_14px_34px_rgba(62,35,22,0.12)]"
+                              aria-label="Previous layout plan"
+                            >
+                              <ChevronLeft size={18} strokeWidth={2.5} />
+                            </button>
+                          ) : null}
+
+                          <FloorPlanIllustration />
+                          {activeLayoutPlan?.imageUrl ? (
+                            <img
+                              src={activeLayoutPlan.imageUrl}
+                              alt={`${property.title} ${activeLayoutPlan.label}`}
+                              onError={(event) => {
+                                event.currentTarget.style.display = 'none';
+                              }}
+                              className="absolute inset-0 z-10 h-full w-full bg-white object-contain p-8"
+                            />
+                          ) : null}
+
+                          {layoutPlanItems.length > 1 ? (
+                            <button
+                              type="button"
+                              onClick={() => setActiveLayoutPlanId(layoutPlanItems[(activeLayoutIndex + 1) % layoutPlanItems.length].id)}
+                              className="absolute right-5 top-1/2 z-20 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white text-[#17110e] shadow-[0_14px_34px_rgba(62,35,22,0.12)]"
+                              aria-label="Next layout plan"
+                            >
+                              <ChevronRight size={18} strokeWidth={2.5} />
+                            </button>
                           ) : null}
                         </div>
-                        <div className="grid content-start gap-4">
-                          <InfoTile label="Configuration" value={configurationLabel} />
-                          <InfoTile label="Super Area" value={formatArea(property.area)} />
-                          <InfoTile label="Possession" value={possessionLabel} />
-                          <p className="rounded-2xl border border-[#f0d8ce] bg-white p-4 text-sm font-medium leading-7 text-[#574b43]">
-                            Final unit layout and tower-wise plans can be confirmed directly with the developer.
-                          </p>
-                        </div>
                       </div>
-                    ) : null}
+                    </section>
 
-                    {activeTab === 'emi-calculator' ? (
+                    <section id="section-emi-calculator" className="scroll-mt-32">
                       <div className="rounded-[28px] border border-[#f0d8ce] bg-white p-3 shadow-[0_18px_50px_rgba(62,35,22,0.08)]">
                         <div className="rounded-[28px] border border-[#e7edf3] bg-white p-4 shadow-[0_14px_34px_rgba(62,35,22,0.06)]">
                           <div className="space-y-4">
@@ -929,48 +1274,108 @@ const PropertyDetails = () => {
                           </div>
                         </div>
                       </div>
-                    ) : null}
+                    </section>
 
-                    {activeTab === 'amenities' ? (
-                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    <section id="section-amenities" className="scroll-mt-32">
+                      <div className="rounded-[30px] border border-[#f0d8ce] bg-[radial-gradient(circle_at_top_left,#fff0ea_0%,#fffaf6_35%,#ffffff_100%)] p-4 shadow-[0_18px_45px_rgba(62,35,22,0.05)]">
+                        <div className="mb-4 flex items-center justify-between gap-3 px-1">
+                          <div>
+                            <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#df472b]">Amenities</p>
+                            <h2 className="mt-1 text-2xl font-semibold tracking-[-0.03em] text-[#17110e]">Lifestyle features</h2>
+                          </div>
+                          <span className="rounded-full bg-white px-4 py-2 text-sm font-bold text-[#df472b] shadow-[0_10px_28px_rgba(62,35,22,0.06)]">
+                            {amenities.length || 0} Items
+                          </span>
+                        </div>
                         {amenities.length > 0 ? (
-                          amenities.map((amenity) => (
-                            <div key={amenity} className="flex items-center gap-3 rounded-2xl border border-[#f0d8ce] bg-white p-4">
-                              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#fff0ea] text-[#df472b]">
-                                <CheckCircle2 size={17} />
-                              </span>
-                              <span className="text-sm font-bold text-[#46372f]">{amenity}</span>
-                            </div>
-                          ))
+                          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                            {amenities.map((amenity, index) => (
+                              <div
+                                key={amenity}
+                                className="group relative min-h-[118px] overflow-hidden rounded-3xl border border-[#f0d8ce] bg-white px-4 py-4 shadow-[0_14px_30px_rgba(62,35,22,0.04)] transition hover:-translate-y-0.5 hover:shadow-[0_18px_38px_rgba(223,71,43,0.12)]"
+                              >
+                                <span className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-[#fff0ea] transition group-hover:scale-110" />
+                                <div className="relative flex items-start justify-between gap-3">
+                                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#df472b] text-white shadow-[0_10px_20px_rgba(223,71,43,0.22)]">
+                                    <CheckCircle2 size={18} strokeWidth={2.8} />
+                                  </span>
+                                  <span className="text-xs font-black text-[#f0d8ce]">0{index + 1}</span>
+                                </div>
+                                <p className="relative mt-4 text-sm font-bold leading-5 text-[#2a1d17]">{amenity}</p>
+                              </div>
+                            ))}
+                          </div>
                         ) : (
-                          <p className="col-span-full py-10 text-center text-sm font-semibold text-[#8b7d72]">Amenities details coming soon</p>
+                          <p className="py-10 text-center text-sm font-semibold text-[#8b7d72]">Amenities details coming soon</p>
                         )}
                       </div>
-                    ) : null}
+                    </section>
 
-                    {activeTab === 'specifications' ? (
-                      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                        {specificationRows.map(([label, value]) => (
-                          <InfoTile key={label} label={label} value={value} />
-                        ))}
-                      </div>
-                    ) : null}
-
-                    {activeTab === 'location' ? (
-                      <div className="space-y-5">
-                        <div className="overflow-hidden rounded-3xl border border-[#f0d8ce] bg-[#fffaf6]">
-                          <div className="relative aspect-[21/9] min-h-[260px]">
-                            <img
-                              src="https://images.unsplash.com/photo-1524661135-423995f22d0b?auto=format&fit=crop&q=80&w=1600"
-                              alt="Location map"
-                              className="h-full w-full object-cover opacity-60 grayscale"
-                            />
-                            <div className="absolute inset-0 flex items-center justify-center">
-                              <div className="inline-flex items-center gap-3 rounded-full border border-[#ead7cd] bg-white px-6 py-4 shadow-2xl">
-                                <MapPin size={20} className="text-[#df472b]" />
-                                <span className="text-sm font-bold text-[#19110d]">{displayLocation}</span>
+                    <section id="section-specifications" className="scroll-mt-32">
+                      <div className="rounded-[30px] border border-[#f0d8ce] bg-white p-4 shadow-[0_18px_42px_rgba(62,35,22,0.05)]">
+                        <div className="mb-4 flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#df472b]">Specifications</p>
+                            <h2 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-[#17110e]">Project finishes</h2>
+                          </div>
+                          <span className="rounded-full bg-[#fff0ea] px-3 py-1.5 text-xs font-bold text-[#df472b]">
+                            {specificationRows.length} Specs
+                          </span>
+                        </div>
+                        <div className="grid gap-3 md:grid-cols-2">
+                          {specificationRows.map(([label, value], index) => (
+                            <div
+                              key={`${label}-${index}`}
+                              className="flex gap-3 rounded-2xl border border-[#f0d8ce] bg-[#fffaf6] p-3 shadow-[0_10px_24px_rgba(62,35,22,0.03)]"
+                            >
+                              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-[11px] font-black text-[#df472b] shadow-[0_8px_18px_rgba(223,71,43,0.1)]">
+                                {String(index + 1).padStart(2, '0')}
+                              </span>
+                              <div className="min-w-0">
+                                <p className="text-[11px] font-semibold text-[#8f7a6f]">{label}</p>
+                                <p className="mt-1 text-[13px] font-semibold leading-5 text-[#241812]">{value}</p>
                               </div>
                             </div>
+                          ))}
+                        </div>
+                      </div>
+                    </section>
+
+                    <section id="section-location" className="scroll-mt-32">
+                      <div className="space-y-5">
+                        <div className="overflow-hidden rounded-3xl border border-[#f0d8ce] bg-[#fffaf6]">
+                          <div className="relative h-[240px] sm:h-[280px] lg:h-[315px]">
+                            {locationUrl ? (
+                              <iframe
+                                src={locationUrl}
+                                title={`${property.title} live location`}
+                                loading="lazy"
+                                referrerPolicy="no-referrer-when-downgrade"
+                                className="h-full w-full border-0"
+                              />
+                            ) : (
+                              <>
+                                <img
+                                  src="https://images.unsplash.com/photo-1524661135-423995f22d0b?auto=format&fit=crop&q=80&w=1600"
+                                  alt="Location map"
+                                  className="h-full w-full object-cover opacity-60 grayscale"
+                                />
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                  <div className="inline-flex items-center gap-3 rounded-full border border-[#ead7cd] bg-white px-6 py-4 shadow-2xl">
+                                    <MapPin size={20} className="text-[#df472b]" />
+                                    <span className="text-sm font-bold text-[#19110d]">{displayLocation}</span>
+                                  </div>
+                                </div>
+                              </>
+                            )}
+                            {locationUrl ? (
+                              <div className="absolute bottom-4 left-4 max-w-[calc(100%-2rem)] rounded-full border border-[#ead7cd] bg-white px-5 py-3 shadow-xl">
+                                <div className="flex items-center gap-2">
+                                  <MapPin size={18} className="shrink-0 text-[#df472b]" />
+                                  <span className="line-clamp-1 text-sm font-bold text-[#19110d]">{displayLocation}</span>
+                                </div>
+                              </div>
+                            ) : null}
                           </div>
                         </div>
                         <div className="rounded-3xl border border-[#f0d8ce] bg-white p-4 shadow-[0_14px_34px_rgba(62,35,22,0.05)]">
@@ -1021,36 +1426,59 @@ const PropertyDetails = () => {
                           <InfoTile label="Locality" value={property.locality || 'On request'} />
                         </div>
                       </div>
-                    ) : null}
+                    </section>
 
-                    {activeTab === 'about-developer' ? (
-                      <div className="flex flex-col gap-7 md:flex-row">
-                        <div className="flex h-28 w-28 shrink-0 items-center justify-center rounded-3xl border border-[#f0d8ce] bg-white p-5 shadow-[0_14px_34px_rgba(62,35,22,0.06)]">
-                          {developerLogo ? (
-                            <img src={developerLogo} alt={developerName} className="max-h-full max-w-full object-contain" />
-                          ) : (
-                            <Building size={38} className="text-[#df472b]" />
-                          )}
-                        </div>
-                        <div>
-                          <h3 className="text-3xl font-black text-[#111111]">{developerName}</h3>
-                          <p className="mt-4 text-base font-medium leading-8 text-[#574b43]">
-                            {property.developer?.description || 'Developer details will be updated soon.'}
-                          </p>
-                          <span className="mt-5 inline-flex items-center gap-2 rounded-full border border-[#cfe9d3] bg-[#f3fff4] px-4 py-2 text-xs font-bold uppercase tracking-[0.18em] text-[#239a31]">
-                            <ShieldCheck size={14} />
-                            {property.developer?.isActive === false ? 'Private Developer' : 'Active Developer'}
-                          </span>
+                    <section id="section-about-developer" className="scroll-mt-32">
+                      <div className="overflow-hidden rounded-[30px] border border-[#f0d8ce] bg-[linear-gradient(135deg,#fff7f2_0%,#ffffff_48%,#fffaf6_100%)] shadow-[0_18px_45px_rgba(62,35,22,0.05)]">
+                        <div className="grid gap-0 lg:grid-cols-[300px_1fr]">
+                          <div className="relative flex flex-col items-center justify-center border-b border-[#f0d8ce] bg-[#fffaf6] p-6 text-center lg:border-b-0 lg:border-r">
+                            <span className="absolute left-5 top-5 rounded-full bg-white px-3 py-1 text-[11px] font-bold uppercase tracking-[0.18em] text-[#df472b] shadow-sm">
+                              Developer
+                            </span>
+                            <div className="mt-7 flex h-32 w-32 items-center justify-center rounded-[28px] border border-[#f0d8ce] bg-white p-5 shadow-[0_18px_38px_rgba(62,35,22,0.08)]">
+                              {developerLogo ? (
+                                <img src={developerLogo} alt={developerName} className="max-h-full max-w-full object-contain" />
+                              ) : (
+                                <Building size={42} className="text-[#df472b]" />
+                              )}
+                            </div>
+                            <h3 className="mt-5 text-3xl font-black tracking-[-0.04em] text-[#111111]">{developerName}</h3>
+                            <span className="mt-4 inline-flex items-center gap-2 rounded-full border border-[#cfe9d3] bg-[#f3fff4] px-4 py-2 text-[11px] font-bold uppercase tracking-[0.16em] text-[#239a31]">
+                              <ShieldCheck size={14} />
+                              {property.developer?.isActive === false ? 'Private Developer' : 'Active Developer'}
+                            </span>
+                          </div>
+
+                          <div className="p-5 sm:p-7">
+                            <p className="text-sm font-medium leading-7 text-[#4f443d]">
+                              {developerDescription}
+                            </p>
+                            <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                              <div className="rounded-3xl border border-[#f0d8ce] bg-white p-5 shadow-[0_12px_28px_rgba(62,35,22,0.04)]">
+                                <p className="text-xs font-semibold text-[#8f7a6f]">Total projects</p>
+                                <p className="mt-2 text-2xl font-black text-[#17110e]">
+                                  {property.developerTotalProjects ? `${property.developerTotalProjects}+` : 'On request'}
+                                </p>
+                                <p className="mt-1 text-xs font-semibold text-[#df472b]">Delivered / active projects</p>
+                              </div>
+                              <div className="rounded-3xl border border-[#f0d8ce] bg-white p-5 shadow-[0_12px_28px_rgba(62,35,22,0.04)]">
+                                <p className="text-xs font-semibold text-[#8f7a6f]">Total experience</p>
+                                <p className="mt-2 text-2xl font-black text-[#17110e]">
+                                  {property.developerExperienceYears ? `${property.developerExperienceYears}+` : 'On request'}
+                                </p>
+                                <p className="mt-1 text-xs font-semibold text-[#df472b]">Years in real estate</p>
+                              </div>
+                            </div>
+                          </div>
                         </div>
                       </div>
-                    ) : null}
+                    </section>
                   </motion.div>
-                </AnimatePresence>
               </div>
             </div>
 
-            {activeTab === 'property-details' && property.videoUrl ? (
-              <div className="overflow-hidden rounded-3xl border border-[#f0d8ce] bg-white shadow-[0_18px_50px_rgba(62,35,22,0.08)]">
+            {property.videoUrl ? (
+              <div className="scroll-mt-32 overflow-hidden rounded-3xl border border-[#f0d8ce] bg-white shadow-[0_18px_50px_rgba(62,35,22,0.08)]">
                 <div className="flex items-center gap-3 border-b border-[#f0d8ce] px-7 py-3">
                   <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#fff0ea] text-[#df472b]">
                     <Play size={15} />
@@ -1074,8 +1502,8 @@ const PropertyDetails = () => {
 
           </div>
 
-          <aside id="group-buying-panel" className="space-y-4 lg:sticky lg:top-28 lg:self-start">
-            <div className="rounded-[24px] border border-[#d8d2cf] bg-white px-4 py-4 shadow-[0_18px_48px_rgba(62,35,22,0.06)]">
+          <aside id="group-buying-panel" className="space-y-3 lg:self-start">
+            <div className="rounded-[24px] border border-[#d8d2cf] bg-white px-4 py-3 shadow-[0_18px_48px_rgba(62,35,22,0.06)]">
               <div className="flex items-center gap-3">
                 <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#fde9e4] text-[#df472b]">
                   <Users size={20} fill="currentColor" />
@@ -1088,9 +1516,9 @@ const PropertyDetails = () => {
                 </div>
               </div>
 
-              <div className="my-4 h-px bg-[#ded8d4]" />
+              <div className="my-3 h-px bg-[#ded8d4]" />
 
-              <p className="text-base font-semibold leading-6 text-[#101021]">
+              <p className="text-sm text-[#777782] leading-5 font-semibold">
                 Join more buyers and unlock best savings
               </p>
 
@@ -1098,16 +1526,16 @@ const PropertyDetails = () => {
                 type="button"
                 onClick={handleJoinGroup}
                 disabled={joining || liveGroupStatus === 'FULL' || isMember}
-                className="mt-4 inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#df472b] px-5 text-base font-semibold text-white transition-all hover:-translate-y-0.5 hover:bg-[#c83e24] disabled:cursor-not-allowed disabled:opacity-60"
+                className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-[#df472b] px-5 text-sm font-semibold text-white transition-all hover:-translate-y-0.5 hover:bg-[#c83e24] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {joining ? <Loader2 size={18} className="animate-spin" /> : isMember ? 'Joined' : 'Join Group'}
                 {!joining && !isMember ? <ArrowUpRight size={18} /> : null}
               </button>
 
-              <div className="mt-4 border-t border-[#ded8d4] pt-4">
-                <h3 className="text-xl font-medium text-[#777782]">Joined Members</h3>
+              <div className="mt-3 border-t border-[#ded8d4] pt-3">
+                <h3 className="text-sm font-medium text-[#777782]">Joined Members</h3>
 
-                <div className="mt-3 max-h-[190px] space-y-2 overflow-y-auto pr-2 [scrollbar-color:#c7c7c7_transparent] [scrollbar-width:thin]">
+                <div className="mt-2 max-h-[130px] space-y-2 overflow-y-auto pr-2 [scrollbar-color:#c7c7c7_transparent] [scrollbar-width:thin]">
                   {joinedMemberRows.length > 0 ? (
                     joinedMemberRows.map((member, memberIndex) => {
                       const memberName = member.user?.name || member.user?.email?.split('@')[0] || `Member ${memberIndex + 1}`;
@@ -1140,7 +1568,7 @@ const PropertyDetails = () => {
                       );
                     })
                   ) : (
-                    <div className="flex min-h-[92px] items-center justify-center rounded-xl border border-dashed border-[#f2beb4] bg-[#fff8f5] px-5 text-center text-xs font-semibold text-[#9b8a7d]">
+                    <div className="flex min-h-[70px] items-center justify-center rounded-xl border border-dashed border-[#f2beb4] bg-[#fff8f5] px-5 text-center text-xs font-semibold text-[#9b8a7d]">
                       No members joined yet
                     </div>
                   )}
@@ -1148,17 +1576,17 @@ const PropertyDetails = () => {
               </div>
             </div>
 
-            <div className="rounded-[24px] bg-[#17110e] p-5 text-white shadow-[0_18px_50px_rgba(23,17,14,0.16)]">
+            <div className="rounded-[24px] bg-[#17110e] p-4 text-white shadow-[0_18px_50px_rgba(23,17,14,0.16)]">
               <div className="flex items-center gap-2.5">
                 <Info size={16} className="text-[#ff8061]" />
-                <h3 className="text-lg font-black">Why Group Buying?</h3>
+                <h3 className="text-base font-black">Why Group Buying?</h3>
               </div>
-              <p className="mt-2 text-xs font-medium leading-5 text-white/60">
+              <p className="mt-1.5 text-[11px] font-medium leading-4 text-white/60">
                 Coordinate with other buyers to unlock bulk-purchase discounts directly from the developer. No middlemen. No hidden fees.
               </p>
-              <div className="mt-4 grid gap-2.5">
+              <div className="mt-3 grid gap-2">
                 {['Zero Middleman Fees', 'Direct Developer Negotiation', 'Group Price Protection', 'Faster Deal Closure'].map((item) => (
-                  <div key={item} className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-3.5 py-2.5">
+                  <div key={item} className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-3.5 py-2">
                     <CheckCircle2 size={14} className="text-[#ff8061]" />
                     <span className="text-xs font-bold">{item}</span>
                   </div>
@@ -1215,7 +1643,7 @@ const PropertyDetails = () => {
               </div>
 
               <div className="grid min-h-0 flex-1 gap-0 lg:grid-cols-[0.42fr_0.58fr]">
-                <div className="min-h-0 border-r border-[#efe2dc] bg-[#fff8f4] p-5">
+                <div className="flex min-h-0 flex-col border-r border-[#efe2dc] bg-[#fff8f4] p-5">
                   <div className="flex items-center justify-between gap-3">
                     <h3 className="text-lg font-semibold text-[#17110e]">Selected</h3>
                     <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#df472b]">
@@ -1223,7 +1651,7 @@ const PropertyDetails = () => {
                     </span>
                   </div>
 
-                  <div className="mt-4 max-h-[calc(100vh-235px)] space-y-3 overflow-y-auto pr-1 no-scrollbar">
+                  <div className="mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1 pb-3 no-scrollbar">
                     {comparisonLoading ? (
                       <div className="flex min-h-[220px] items-center justify-center rounded-3xl border border-[#efd9cf] bg-white">
                         <Loader2 size={26} className="animate-spin text-[#df472b]" />
@@ -1268,15 +1696,17 @@ const PropertyDetails = () => {
                     )}
                   </div>
 
-                  <button
-                    type="button"
-                    disabled={comparisonItems.length < 2}
-                    onClick={() => navigate('/comparison')}
-                    className="mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[#df472b] px-5 text-sm font-semibold text-white transition-all hover:-translate-y-0.5 hover:bg-[#c83e24] disabled:cursor-not-allowed disabled:opacity-55"
-                  >
-                    Compare Now
-                    <ArrowUpRight size={16} />
-                  </button>
+                  <div className="shrink-0 border-t border-[#efe2dc] bg-[#fff8f4] pt-4">
+                    <button
+                      type="button"
+                      disabled={comparisonItems.length < 2}
+                      onClick={() => navigate('/comparison')}
+                      className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[#df472b] px-5 text-sm font-semibold text-white shadow-[0_14px_30px_rgba(223,71,43,0.22)] transition-all hover:-translate-y-0.5 hover:bg-[#c83e24] disabled:cursor-not-allowed disabled:opacity-55"
+                    >
+                      Compare Now
+                      <ArrowUpRight size={16} />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="min-h-0 bg-white p-5">

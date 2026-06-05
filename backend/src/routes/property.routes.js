@@ -3,6 +3,7 @@ const router = express.Router();
 const { authenticate, authorize } = require('../middleware/auth.middleware');
 const { optionalAuth } = require('../middleware/auth.middleware');
 const db = require('../config/database');
+const ensurePropertyDetailFields = require('../utils/ensurePropertyDetailFields');
 const ensurePropertyStatuses = require('../utils/ensurePropertyStatuses');
 
 const DEFAULT_ORDER_BY = [{ isFeatured: 'desc' }, { createdAt: 'desc' }];
@@ -11,26 +12,166 @@ const DEFAULT_BUDGET_MAX = 150000000;
 const BUDGET_STEP = 500000;
 const SUPPORTED_PROPERTY_TYPES = ['Residential', 'Commercial', 'Plots', 'Villa'];
 
+const splitLines = (value) => String(value || '')
+  .split('\n')
+  .map((item) => item.trim())
+  .filter(Boolean);
+
+const isLikelyImageUrl = (value = '') => /^(https?:\/\/|\/|uploads\/|data:image\/|blob:)/i.test(String(value).trim())
+  || /\.(png|jpe?g|webp|gif|svg)(\?.*)?$/i.test(String(value).trim());
+
+const isLikelyArea = (value = '') => /(sq\.?\s*ft|sqft|square\s*feet|acre|acres|sq\.?\s*m|sqm|yard|yd)/i.test(String(value).trim());
+
+const parseFloorPlans = (value) => {
+  if (Array.isArray(value)) return value;
+  return splitLines(value).map((line) => {
+    const [label, ...parts] = line.split('|').map((part) => part.trim());
+    const [first = '', second = '', third = '', fourth = ''] = parts;
+    const startsWithImage = isLikelyImageUrl(first);
+    const startsWithArea = isLikelyArea(first);
+    const secondIsArea = isLikelyArea(second);
+
+    let imageUrl = '';
+    let area = '';
+    let price = '';
+    let priceTo = '';
+
+    if (startsWithImage) {
+      imageUrl = first;
+      area = second;
+      price = third;
+      priceTo = fourth;
+    } else if (startsWithArea) {
+      area = first;
+      price = second;
+      imageUrl = third;
+      priceTo = fourth;
+    } else {
+      price = first;
+      area = secondIsArea || second ? second : '';
+      imageUrl = third;
+      priceTo = fourth;
+    }
+
+    if (!isLikelyImageUrl(imageUrl)) {
+      const detectedImageUrl = parts.find(isLikelyImageUrl);
+      if (detectedImageUrl) imageUrl = detectedImageUrl;
+    }
+
+    return {
+      label: label || 'Floor Plan',
+      imageUrl: imageUrl || '',
+      area: area || '',
+      price: price || '',
+      priceTo: priceTo || '',
+    };
+  }).filter((plan) => plan.label || plan.imageUrl);
+};
+
+const parseNearbyPlaces = (value) => {
+  if (Array.isArray(value)) return value;
+  return splitLines(value).map((line) => {
+    const [category, name, address, distance, time] = line.split('|').map((part) => part.trim());
+    return {
+      category: category || 'Nearby',
+      name: name || '',
+      address: address || '',
+      distance: distance || '',
+      time: time || '',
+    };
+  }).filter((place) => place.category || place.name);
+};
+
+const parsePriceInput = (value) => {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  const text = String(value).replace(/,/g, '').trim();
+  const match = text.match(/[\d.]+/);
+  if (!match) return null;
+  let parsedValue = Number(match[0]);
+  if (!Number.isFinite(parsedValue)) return null;
+  if (/cr|crore/i.test(text)) parsedValue *= 10000000;
+  if (/lac|lakh/i.test(text)) parsedValue *= 100000;
+  return parsedValue;
+};
+
+const extractBhkFromLabel = (value = '') => {
+  const match = String(value).match(/\d+/);
+  return match ? parseInt(match[0], 10) : null;
+};
+
+const getFloorPlanPrices = (floorPlans = []) => floorPlans
+  .flatMap((plan) => [
+    parsePriceInput(plan?.price ?? plan?.minPrice ?? plan?.priceFrom),
+    parsePriceInput(plan?.priceTo ?? plan?.maxPrice ?? plan?.priceTill),
+  ])
+  .filter((price) => Number.isFinite(price) && price > 0);
+
+const getFloorPlanBhks = (floorPlans = []) => floorPlans
+  .map((plan) => parseInt(plan?.bhk, 10) || extractBhkFromLabel(plan?.label || plan?.title || plan?.name || plan?.configuration))
+  .filter((bhk) => Number.isFinite(bhk) && bhk > 0);
+
+const parseOptionalNumber = (data, field, parser = parseFloat) => {
+  if (data[field] === '') {
+    data[field] = null;
+    return;
+  }
+  if (data[field] !== undefined && data[field] !== null) {
+    const parsedValue = parser(data[field]);
+    data[field] = Number.isFinite(parsedValue) ? parsedValue : null;
+  }
+};
+
 const preparePropertyData = (body) => {
   const data = { ...body };
 
-  if (data.price) data.price = parseFloat(data.price);
-  if (data.originalPrice) data.originalPrice = parseFloat(data.originalPrice);
-  if (data.discountedPrice) data.discountedPrice = parseFloat(data.discountedPrice);
+  if (data.price !== undefined) data.price = parsePriceInput(data.price);
+  if (data.originalPrice !== undefined) data.originalPrice = parsePriceInput(data.originalPrice);
+  if (data.discountedPrice !== undefined) data.discountedPrice = parsePriceInput(data.discountedPrice);
   if (data.targetGroupSize) data.targetGroupSize = parseInt(data.targetGroupSize);
   if (data.bhk) data.bhk = parseInt(data.bhk);
   if (data.area) data.area = parseFloat(data.area);
+  parseOptionalNumber(data, 'unitCount', parseInt);
+  parseOptionalNumber(data, 'propertyAreaAcres', parseFloat);
+  parseOptionalNumber(data, 'developerTotalProjects', parseInt);
+  parseOptionalNumber(data, 'developerExperienceYears', parseInt);
   if (data.trackingCount) data.trackingCount = parseInt(data.trackingCount);
   if (data.expiryDate && data.expiryDate !== '') data.expiryDate = new Date(data.expiryDate);
   if (data.expiryDate === '') data.expiryDate = null;
+  if (data.possessionDate && data.possessionDate !== '') data.possessionDate = new Date(data.possessionDate);
+  if (data.possessionDate === '') data.possessionDate = null;
+  if (data.launchDate && data.launchDate !== '') data.launchDate = new Date(data.launchDate);
+  if (data.launchDate === '') data.launchDate = null;
   if (data.developerId === '') data.developerId = null;
   if (data.propertyStatusId === '') data.propertyStatusId = null;
+  if (data.displaySection === '') data.displaySection = null;
 
   if (typeof data.images === 'string') {
-    data.images = data.images.split('\n').map(s => s.trim()).filter(s => s !== '');
+    data.images = splitLines(data.images);
   }
   if (typeof data.amenities === 'string') {
-    data.amenities = data.amenities.split('\n').map(s => s.trim()).filter(s => s !== '');
+    data.amenities = splitLines(data.amenities);
+  }
+  if (typeof data.highlights === 'string') data.highlights = splitLines(data.highlights);
+  if (typeof data.specifications === 'string') data.specifications = splitLines(data.specifications);
+  if (typeof data.floorPlans === 'string') data.floorPlans = parseFloorPlans(data.floorPlans);
+  if (typeof data.nearbyPlaces === 'string') data.nearbyPlaces = parseNearbyPlaces(data.nearbyPlaces);
+
+  if (Array.isArray(data.floorPlans) && data.floorPlans.length) {
+    const floorPlanPrices = getFloorPlanPrices(data.floorPlans);
+    const floorPlanBhks = getFloorPlanBhks(data.floorPlans);
+    const firstPlanArea = String(data.floorPlans[0]?.area || '').replace(/,/g, '').match(/[\d.]+/)?.[0];
+
+    if (!Number.isFinite(data.price) && floorPlanPrices.length) {
+      data.price = Math.min(...floorPlanPrices);
+    }
+    if (!Number.isFinite(data.bhk) && floorPlanBhks.length) {
+      data.bhk = Math.min(...floorPlanBhks);
+    }
+    if (!Number.isFinite(data.area) && firstPlanArea) {
+      const parsedArea = parseFloat(firstPlanArea);
+      data.area = Number.isFinite(parsedArea) ? parsedArea : data.area;
+    }
   }
 
   delete data.developer;
@@ -130,9 +271,22 @@ const getRoundedBudgetMax = (prices) => {
   );
 };
 
+const propertyMatchesBhk = (property, requestedBhk) => {
+  if (!requestedBhk) return true;
+  if (parseInt(property.bhk, 10) === requestedBhk) return true;
+  return getFloorPlanBhks(property.floorPlans || []).includes(requestedBhk);
+};
+
+const getPropertyPriceValues = (property) => [
+  parsePriceInput(property.price),
+  parsePriceInput(property.originalPrice),
+  ...getFloorPlanPrices(property.floorPlans || []),
+].filter((price) => Number.isFinite(price) && price > 0);
+
 // GET /api/properties - List all properties with filters
 router.get('/', optionalAuth, async (req, res, next) => {
   try {
+    await ensurePropertyDetailFields();
     await ensurePropertyStatuses();
     const {
       city,
@@ -171,9 +325,10 @@ router.get('/', optionalAuth, async (req, res, next) => {
       },
     };
 
+    const requestedBhk = bhk ? parseInt(bhk, 10) : null;
+
     if (city) where.city = { contains: city };
     if (locality) where.locality = { contains: locality };
-    if (bhk) where.bhk = parseInt(bhk);
     if (status) {
       where.status = status;
     } else {
@@ -225,13 +380,14 @@ router.get('/', optionalAuth, async (req, res, next) => {
     let properties;
     let total;
 
-    if (displaySection) {
+    if (displaySection || requestedBhk) {
       const allProperties = await db.property.findMany({
         where,
         include,
         orderBy,
       });
-      const filteredProperties = filterPropertiesByDisplaySection(allProperties, displaySection);
+      const sectionFilteredProperties = displaySection ? filterPropertiesByDisplaySection(allProperties, displaySection) : allProperties;
+      const filteredProperties = sectionFilteredProperties.filter((property) => propertyMatchesBhk(property, requestedBhk));
 
       total = filteredProperties.length;
       properties = filteredProperties.slice(skip, skip + parsedLimit);
@@ -261,6 +417,7 @@ router.get('/', optionalAuth, async (req, res, next) => {
 // GET /api/properties/filter-options - Dynamic homepage/search filter data
 router.get('/filter-options', async (req, res, next) => {
   try {
+    await ensurePropertyDetailFields();
     await ensurePropertyStatuses();
 
     const properties = await db.property.findMany({
@@ -270,8 +427,32 @@ router.get('/filter-options', async (req, res, next) => {
         category: true,
         bhk: true,
         price: true,
+        originalPrice: true,
+        floorPlans: true,
       },
       orderBy: { createdAt: 'desc' },
+    });
+
+    const configurationValues = properties.flatMap((property) => [
+      property.bhk,
+      ...getFloorPlanBhks(property.floorPlans || []),
+    ]);
+    const budgetValues = properties.flatMap(getPropertyPriceValues);
+    const records = properties.flatMap((property) => {
+      const bhkValues = [...new Set([
+        property.bhk,
+        ...getFloorPlanBhks(property.floorPlans || []),
+      ].filter(Boolean).map(String))];
+      const baseRecord = {
+        city: cleanTextValue(property.city),
+        locality: cleanTextValue(property.locality),
+        category: cleanTextValue(property.category),
+      };
+
+      return (bhkValues.length ? bhkValues : ['']).map((propertyBhk) => ({
+        ...baseRecord,
+        bhk: propertyBhk,
+      }));
     });
 
     res.json({
@@ -283,18 +464,13 @@ router.get('/filter-options', async (req, res, next) => {
           ...SUPPORTED_PROPERTY_TYPES,
           ...properties.map((property) => property.category),
         ]),
-        configurations: buildBhkOptions(properties.map((property) => property.bhk)),
+        configurations: buildBhkOptions(configurationValues),
         budget: {
           minPrice: 0,
-          maxPrice: getRoundedBudgetMax(properties.map((property) => property.price)),
+          maxPrice: getRoundedBudgetMax(budgetValues),
           step: BUDGET_STEP,
         },
-        records: properties.map((property) => ({
-          city: cleanTextValue(property.city),
-          locality: cleanTextValue(property.locality),
-          category: cleanTextValue(property.category),
-          bhk: property.bhk ? String(property.bhk) : '',
-        })),
+        records,
       },
     });
   } catch (error) { next(error); }
@@ -325,6 +501,7 @@ router.get('/property-statuses', async (req, res, next) => {
 // GET /api/properties/project-videos - Public list
 router.get('/project-videos', async (req, res, next) => {
   try {
+    await ensurePropertyDetailFields();
     await ensurePropertyStatuses();
     const projectVideos = await db.projectVideo.findMany({
       where: { isActive: true },
@@ -345,6 +522,7 @@ router.get('/project-videos', async (req, res, next) => {
 // GET /api/properties/suggest/smart - Smart matching
 router.get('/suggest/smart', authenticate, async (req, res, next) => {
   try {
+    await ensurePropertyDetailFields();
     await ensurePropertyStatuses();
     const user = await db.user.findUnique({ where: { id: req.user.id } });
     const where = { status: 'ACTIVE' };
@@ -385,6 +563,7 @@ router.get('/suggest/smart', authenticate, async (req, res, next) => {
 // GET /api/properties/:id - Single property
 router.get('/:id', optionalAuth, async (req, res, next) => {
   try {
+    await ensurePropertyDetailFields();
     await ensurePropertyStatuses();
     const property = await db.property.findUnique({
       where: { id: req.params.id },
@@ -413,8 +592,9 @@ router.get('/:id', optionalAuth, async (req, res, next) => {
 });
 
 // POST /api/properties - Create property (Admin only)
-router.post('/', authenticate, authorize('ADMIN'), async (req, res, next) => {
+router.post('/', authenticate, authorize('ADMIN', 'SUPERADMIN'), async (req, res, next) => {
   try {
+    await ensurePropertyDetailFields();
     await ensurePropertyStatuses();
     const data = preparePropertyData(req.body);
 
@@ -429,8 +609,9 @@ router.post('/', authenticate, authorize('ADMIN'), async (req, res, next) => {
 });
 
 // PUT /api/properties/:id - Update property (Admin only)
-router.put('/:id', authenticate, authorize('ADMIN'), async (req, res, next) => {
+router.put('/:id', authenticate, authorize('ADMIN', 'SUPERADMIN'), async (req, res, next) => {
   try {
+    await ensurePropertyDetailFields();
     await ensurePropertyStatuses();
     const data = preparePropertyData(req.body);
 
@@ -448,7 +629,7 @@ router.put('/:id', authenticate, authorize('ADMIN'), async (req, res, next) => {
 });
 
 // DELETE /api/properties/:id - Delete property (Admin only)
-router.delete('/:id', authenticate, authorize('ADMIN'), async (req, res, next) => {
+router.delete('/:id', authenticate, authorize('ADMIN', 'SUPERADMIN'), async (req, res, next) => {
   try {
     await db.property.delete({ where: { id: req.params.id } });
     res.json({ success: true, message: 'Property deleted' });

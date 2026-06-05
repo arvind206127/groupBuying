@@ -17,7 +17,12 @@ const models = {
   oTP: { table: 'otps', json: [], bool: ['isUsed'] },
   developer: { table: 'developers', json: [], bool: ['isActive'], updatedAt: true },
   propertyStatus: { table: 'property_statuses', json: [], bool: ['isActive'], updatedAt: true },
-  property: { table: 'properties', json: ['amenities', 'images'], bool: ['isFeatured'], updatedAt: true },
+  property: {
+    table: 'properties',
+    json: ['amenities', 'images', 'highlights', 'floorPlans', 'specifications', 'nearbyPlaces'],
+    bool: ['isFeatured'],
+    updatedAt: true
+  },
   group: { table: 'groups', json: [], bool: [], updatedAt: true },
   groupMember: { table: 'group_members', json: [], bool: ['isActive'] },
   lead: { table: 'leads', json: [], bool: ['isContacted'], updatedAt: true },

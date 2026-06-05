@@ -293,8 +293,8 @@ const SearchPage = () => {
 
   return (
     <div className=" pb-16 pt-24 sm:pb-24 sm:pt-28 xl:pt-8 xl:pb-[2px]">
-      <div className="mx-auto max-w-[1540px] home-page-gutter">
-        <div className="rounded-[32px] border border-[#ece4dc] bg-[linear-gradient(180deg,#ffffff_0%,#fcf8f5_100%)] px-6 py-5 shadow-[0_24px_70px_rgba(15,23,42,0.06)] sm:px-8 sm:py-8 lg:px-10">
+      <div className="mx-auto max-w-[1540px] home-page-gutter xl:w-full xl:max-w-full">
+        <div className="rounded-[32px] border border-[#ece4dc] bg-[linear-gradient(180deg,#ffffff_0%,#fcf8f5_100%)] px-6 py-5 shadow-[0_24px_70px_rgba(15,23,42,0.06)] sm:px-8 sm:py-8 lg:px-10 xl:-mx-[3%]">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <div className="inline-flex items-center gap-2 rounded-full bg-[#fff2eb] px-3 py-1.5 text-[12px] font-bold tracking-[0.14em] text-[#df472b]">

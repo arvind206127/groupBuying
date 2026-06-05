@@ -20,6 +20,15 @@ const getOrdinal = (n) => {
 };
 
 const fallbackImage = 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?auto=format&fit=crop&q=80&w=1000';
+const API_ORIGIN = (api.defaults.baseURL || '').replace(/\/api\/?$/, '');
+
+const normalizeImageUrl = (value) => {
+  if (!value) return '';
+  if (/^(https?:\/\/|data:image\/|blob:)/i.test(value)) return value;
+  if (value.startsWith('/')) return `${API_ORIGIN}${value}`;
+  if (value.startsWith('uploads/')) return `${API_ORIGIN}/${value}`;
+  return value;
+};
 
 const getInitials = (name) =>
   String(name || 'Member').split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase();
@@ -34,6 +43,59 @@ const getGroupMemberCount = (group) =>
 
 const getMemberDisplayName = (member, index) =>
   member?.user?.name || member?.user?.email?.split('@')[0] || `Member ${index + 1}`;
+
+const parsePriceValue = (value) => {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  const text = String(value).replace(/,/g, '').trim();
+  const match = text.match(/[\d.]+/);
+  if (!match) return null;
+  let number = Number(match[0]);
+  if (!Number.isFinite(number)) return null;
+  if (/cr|crore/i.test(text)) number *= 10000000;
+  if (/lac|lakh/i.test(text)) number *= 100000;
+  return number;
+};
+
+const getPlanLabel = (plan) => {
+  if (!plan || typeof plan === 'string') return String(plan || '').trim();
+  return plan.label || plan.title || plan.name || plan.configuration || (plan.bhk ? `${plan.bhk} BHK` : '');
+};
+
+const getPlanPrices = (property) => (Array.isArray(property?.floorPlans) ? property.floorPlans : [])
+  .flatMap((plan) => [
+    parsePriceValue(plan?.price ?? plan?.minPrice ?? plan?.priceFrom),
+    parsePriceValue(plan?.priceTo ?? plan?.maxPrice ?? plan?.priceTill),
+  ])
+  .filter((price) => Number.isFinite(price) && price > 0);
+
+const getPriceRange = (property) => {
+  const planPrices = getPlanPrices(property);
+  const fallbackPrice = parsePriceValue(property?.price);
+  const prices = planPrices.length ? planPrices : [fallbackPrice].filter((price) => Number.isFinite(price) && price > 0);
+
+  if (!prices.length) return { min: 0, max: 0, isRange: false, label: 'Price on Request' };
+
+  const min = Math.min(...prices);
+  const max = Math.max(...prices);
+
+  return {
+    min,
+    max,
+    isRange: max > min,
+    label: max > min ? `${formatCurrency(min)} - ${formatCurrency(max)}` : formatCurrency(min),
+  };
+};
+
+const getConfigLabel = (property) => {
+  const planLabels = (Array.isArray(property?.floorPlans) ? property.floorPlans : [])
+    .map(getPlanLabel)
+    .filter(Boolean);
+
+  if (planLabels.length > 1) return planLabels.slice(0, 3).join(' / ') + (planLabels.length > 3 ? ' +' : '');
+  if (planLabels.length === 1) return planLabels[0];
+  return property?.bhk ? `${property.bhk} BHK` : property?.category || 'Luxury Apartment';
+};
 
 const ActionButton = ({ children, onClick, className = '', whileHover = { scale: 1.06, y: -1 }, whileTap = { scale: 0.94 }, ariaLabel }) => (
   <motion.button
@@ -98,7 +160,8 @@ const Card = ({ property, index = 0, compact = false }) => {
 
   if (!property) return null;
 
-  const targetPrice = Number(property.price) || 0;
+  const priceRange = getPriceRange(property);
+  const targetPrice = priceRange.min || Number(property.price) || 0;
   const originalPrice = Number(property.originalPrice || property.developerPrice) || targetPrice * 1.22;
   const savings = Math.max(originalPrice - targetPrice, 0);
   const discountPercent = Number(property.discountPercent) || (originalPrice ? Math.max(Math.round((savings / originalPrice) * 100), 12) : 18);
@@ -112,10 +175,10 @@ const Card = ({ property, index = 0, compact = false }) => {
   const visibleMembers = liveMembers.slice(0, 4);
   const isMember = Boolean(user && liveMembers.some((member) => member.userId === user.id));
   const hiddenMembersCount = Math.max(activeMembers - visibleMembers.length, 0);
-  const imageUrl = property.thumbnailUrl || property.image || property.images?.[0]?.url || property.images?.[0] || fallbackImage;
+  const imageUrl = normalizeImageUrl(property.thumbnailUrl || property.image || property.images?.[0]?.url || property.images?.[0]) || fallbackImage;
   const displayLocation = [property.locality || property.location || property.sector, property.city].filter(Boolean).join(', ') || property.address || 'Greater Noida';
   const imageLabel = property.locality || property.location || property.city || 'Greater Noida';
-  const configLabel = property.bhk ? `${property.bhk} BHK` : property.category || 'Luxury Apartment';
+  const configLabel = getConfigLabel(property);
   const subtitle = [displayLocation, configLabel].filter(Boolean).join(' | ');
   const watermarkLabel = property.title?.split(' ')[0]?.slice(0, 10).toUpperCase() || 'HOME';
   const propertyStatusLabel = property.propertyStatus?.name || property.status?.replace(/_/g, ' ') || 'Verified Deal';
@@ -135,6 +198,9 @@ const Card = ({ property, index = 0, compact = false }) => {
   const targetPriceClass = compact
     ? 'mt-0.5 text-[1.35rem] font-semibold leading-none text-[#8f2114]'
     : 'mt-1 text-[1.6rem] font-semibold leading-none text-[#8f2114]';
+  const priceValueClass = priceRange.isRange
+    ? (compact ? 'mt-0.5 text-[1.02rem] font-semibold leading-tight text-[#8f2114]' : 'mt-1 text-[1.18rem] font-semibold leading-tight text-[#8f2114]')
+    : targetPriceClass;
   const groupBoxClass = compact
     ? 'mt-1 rounded-[16px] border border-[#ddd5cf] bg-white px-3 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]'
     : 'mt-1.5 rounded-[18px] border border-[#ddd5cf] bg-white px-3.5 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]';
@@ -301,9 +367,13 @@ const Card = ({ property, index = 0, compact = false }) => {
           <div className={priceBoxClass}>
             <div className="flex items-start justify-between gap-5">
               <div>
-                <p className="text-[11px] font-semibold tracking-[0.18em] text-[#913224]">Target Price</p>
-                <p className={targetPriceClass}>{formatCurrency(targetPrice)}</p>
-                <p className="mt-0.5 text-[12px] font-medium text-[#c53d27]">Rs {Math.max(Math.round(savings / 100000), 0)} Lakh off</p>
+                <p className="text-[11px] font-semibold tracking-[0.18em] text-[#913224]">
+                  {priceRange.isRange ? 'Price Range' : 'Target Price'}
+                </p>
+                <p className={priceValueClass}>{priceRange.label}</p>
+                <p className="mt-0.5 text-[12px] font-medium text-[#c53d27]">
+                  {priceRange.isRange ? 'Multiple BHK pricing' : `Rs ${Math.max(Math.round(savings / 100000), 0)} Lakh off`}
+                </p>
               </div>
               <div className="text-right">
                 <p className="text-[10px] font-medium text-[#ff5b3b]">Developer price</p>
